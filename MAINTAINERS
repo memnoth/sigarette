@@ -3211,6 +3211,13 @@ N:	bcm2711
 N:	bcm2835
 F:	drivers/staging/vc04_services
 
+BROADCOM BCM2711 HEVC DECODER
+M:	Raspberry Pi Kernel Maintenance <kernel-list@raspberrypi.com>
+L:	linux-media@vger.kernel.org
+S:	Maintained
+F:	Documentation/devicetree/bindings/media/rpivid_hevc.jaml
+F:	drivers/staging/media/rpivid
+
 BROADCOM BCM2835 CAMERA DRIVER
 M:	Dave Stevenson <dave.stevenson@raspberrypi.org>
 L:	linux-media@vger.kernel.org
@@ -3355,7 +3362,7 @@ L:	linux-i2c@vger.kernel.org
 L:	bcm-kernel-feedback-list@broadcom.com
 S:	Supported
 F:	drivers/i2c/busses/i2c-brcmstb.c
-F:	Documentation/devicetree/bindings/i2c/i2c-brcmstb.txt
+F:	Documentation/devicetree/bindings/i2c/brcm,brcmstb-i2c.yaml
 
 BROADCOM BRCMSTB USB2 and USB3 PHY DRIVER
 M:	Al Cooper <alcooperx@gmail.com>
@@ -5579,7 +5586,7 @@ T:	git git://github.com/anholt/linux
 S:	Supported
 F:	drivers/gpu/drm/vc4/
 F:	include/uapi/drm/vc4_drm.h
-F:	Documentation/devicetree/bindings/display/brcm,bcm-vc4.txt
+F:	Documentation/devicetree/bindings/display/brcm,bcm2835-*.yaml
 T:	git git://anongit.freedesktop.org/drm/drm-misc
 
 DRM DRIVERS FOR VIVANTE GPU IP

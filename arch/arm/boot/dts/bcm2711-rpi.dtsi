@@ -33,7 +33,8 @@
 
 			power-domains = <&pm BCM2835_POWER_DOMAIN_GRAFX_V3D>;
 			resets = <&pm BCM2835_RESET_V3D>;
-			clocks = <&clocks BCM2835_CLOCK_V3D>;
+			clocks = <&firmware_clocks 5>;
+			clocks-names = "v3d";
 			interrupts = <GIC_SPI 74 IRQ_TYPE_LEVEL_HIGH>;
 			status = "disabled";
 		};
@@ -53,11 +54,6 @@
 		clocks = <&clocks BCM2835_CLOCK_TSENS>;
 		#thermal-sensor-cells = <0>;
 		status = "okay";
-	};
-
-	vc4: gpu {
-		compatible = "brcm,bcm2835-vc4";
-		status = "disabled";
 	};
 
 	/delete-node/ audio;
