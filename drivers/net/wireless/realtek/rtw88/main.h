@@ -600,6 +600,7 @@ struct rtw_tx_pkt_info {
 	u8 hw_ssn_sel;
 	bool en_hw_exseq;
 	bool bt_null;
+	bool no_retry;
 };
 
 struct rtw_rx_pkt_stat {
@@ -1759,6 +1760,9 @@ struct rtw_dev {
 	struct rtw_wow_param wow;
 
 	struct rtw_sar sar;
+
+	u32 fix_rate_count;
+	bool need_rfk;
 
 	/* hci related data, must be last */
 	u8 priv[0] __aligned(sizeof(void *));

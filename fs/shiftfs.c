@@ -240,19 +240,17 @@ static int shiftfs_d_weak_revalidate(struct dentry *dentry, unsigned int flags)
 	int err = 1;
 	struct dentry *lowerd = dentry->d_fsdata;
 
-	if (d_is_negative(lowerd) != d_is_negative(dentry))
-		return 0;
-
-	if ((lowerd->d_flags & DCACHE_OP_WEAK_REVALIDATE))
+	if (lowerd->d_flags & DCACHE_OP_WEAK_REVALIDATE) {
 		err = lowerd->d_op->d_weak_revalidate(lowerd, flags);
+		if (err < 0)
+			return err;
+	}
 
 	if (d_really_is_positive(dentry)) {
 		struct inode *inode = d_inode(dentry);
 		struct inode *loweri = d_inode(lowerd);
 
 		shiftfs_copyattr(loweri, inode);
-		if (!inode->i_nlink)
-			err = 0;
 	}
 
 	return err;
@@ -263,23 +261,25 @@ static int shiftfs_d_revalidate(struct dentry *dentry, unsigned int flags)
 	int err = 1;
 	struct dentry *lowerd = dentry->d_fsdata;
 
-	if (d_unhashed(lowerd) ||
-	    ((d_is_negative(lowerd) != d_is_negative(dentry))))
-		return 0;
-
 	if (flags & LOOKUP_RCU)
 		return -ECHILD;
 
-	if ((lowerd->d_flags & DCACHE_OP_REVALIDATE))
+	if (lowerd->d_flags & DCACHE_OP_REVALIDATE) {
 		err = lowerd->d_op->d_revalidate(lowerd, flags);
+		if (err < 0)
+			return err;
+		if (!err) {
+			if (!(flags & LOOKUP_RCU))
+				d_invalidate(lowerd);
+			return -ESTALE;
+		}
+	}
 
 	if (d_really_is_positive(dentry)) {
 		struct inode *inode = d_inode(dentry);
 		struct inode *loweri = d_inode(lowerd);
 
 		shiftfs_copyattr(loweri, inode);
-		if (!inode->i_nlink)
-			err = 0;
 	}
 
 	return err;
@@ -736,24 +736,6 @@ static int shiftfs_fiemap(struct inode *inode,
 	return err;
 }
 
-static int shiftfs_tmpfile(struct inode *dir, struct dentry *dentry,
-			   umode_t mode)
-{
-	int err;
-	const struct cred *oldcred;
-	struct dentry *lowerd = dentry->d_fsdata;
-	struct inode *loweri = dir->i_private;
-
-	if (!loweri->i_op->tmpfile)
-		return -EOPNOTSUPP;
-
-	oldcred = shiftfs_override_creds(dir->i_sb);
-	err = loweri->i_op->tmpfile(loweri, lowerd, mode);
-	revert_creds(oldcred);
-
-	return err;
-}
-
 static int shiftfs_setattr(struct dentry *dentry, struct iattr *attr)
 {
 	struct dentry *lowerd = dentry->d_fsdata;
@@ -1020,7 +1002,6 @@ static const struct inode_operations shiftfs_file_inode_operations = {
 	.listxattr	= shiftfs_listxattr,
 	.permission	= shiftfs_permission,
 	.setattr	= shiftfs_setattr,
-	.tmpfile	= shiftfs_tmpfile,
 };
 
 static const struct inode_operations shiftfs_special_inode_operations = {
@@ -2020,6 +2001,7 @@ static int shiftfs_fill_super(struct super_block *sb, void *raw_data,
 			 * parent mark mountpoint.
 			 */
 			sbinfo->passthrough_mark = sbinfo_mp->passthrough_mark;
+			sbinfo->creator_cred = get_cred(sbinfo_mp->creator_cred);
 		} else {
 			sbinfo->mnt = mntget(path.mnt);
 			dentry = dget(path.dentry);
@@ -2028,16 +2010,16 @@ static int shiftfs_fill_super(struct super_block *sb, void *raw_data,
 			 * are identical.
 			 */
 			sbinfo->passthrough_mark = sbinfo->passthrough;
-		}
 
-		cred_tmp = prepare_creds();
-		if (!cred_tmp) {
-			err = -ENOMEM;
-			goto out_put_path;
+			cred_tmp = prepare_creds();
+			if (!cred_tmp) {
+				err = -ENOMEM;
+				goto out_put_path;
+			}
+			/* Don't override disk quota limits or use reserved space. */
+			cap_lower(cred_tmp->cap_effective, CAP_SYS_RESOURCE);
+			sbinfo->creator_cred = cred_tmp;
 		}
-		/* Don't override disk quota limits or use reserved space. */
-		cap_lower(cred_tmp->cap_effective, CAP_SYS_RESOURCE);
-		sbinfo->creator_cred = cred_tmp;
 	} else {
 		/*
 		 * This leg executes if we're admin capable in the namespace,

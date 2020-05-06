@@ -404,11 +404,12 @@ endif
 
 ifeq ($(do_dkms_nvidia),true)
 	$(call build_dkms, $(bldinfo_pkg_name)-$*, $(pkgdir_bldinfo)/usr/lib/linux/$(abi_release)-$*/signatures, "", nvidia-390, pool/restricted/n/nvidia-graphics-drivers-390/nvidia-kernel-source-390_$(dkms_nvidia_390_version)_$(arch).deb pool/restricted/n/nvidia-graphics-drivers-390/nvidia-dkms-390_$(dkms_nvidia_390_version)_$(arch).deb)
+	$(call build_dkms, $(bldinfo_pkg_name)-$*, $(pkgdir_bldinfo)/usr/lib/linux/$(abi_release)-$*/signatures, "", nvidia-435, pool/restricted/n/nvidia-graphics-drivers-435/nvidia-kernel-source-435_$(dkms_nvidia_435_version)_$(arch).deb pool/restricted/n/nvidia-graphics-drivers-435/nvidia-dkms-435_$(dkms_nvidia_435_version)_$(arch).deb)
 	$(call build_dkms, $(bldinfo_pkg_name)-$*, $(pkgdir_bldinfo)/usr/lib/linux/$(abi_release)-$*/signatures, "", nvidia-440, pool/restricted/n/nvidia-graphics-drivers-440/nvidia-kernel-source-440_$(dkms_nvidia_440_version)_$(arch).deb pool/restricted/n/nvidia-graphics-drivers-440/nvidia-dkms-440_$(dkms_nvidia_440_version)_$(arch).deb)
 endif
 
 ifeq ($(do_extras_package),true)
-	$(if $(filter true,$(do_dkms_vbox)),$(call build_dkms, $(mods_pkg_name)-$*, $(pkgdir_ex)/lib/modules/$(abi_release)-$*/kernel, "", virtualbox-guest, pool/multiverse/v/virtualbox/virtualbox-guest-dkms_$(dkms_vbox_guest_version)_all.deb))
+	$(if $(filter true,$(do_dkms_vbox)),$(call build_dkms, $(mods_pkg_name)-$*, $(pkgdir)/lib/modules/$(abi_release)-$*/kernel, "", virtualbox-guest, pool/multiverse/v/virtualbox/virtualbox-guest-dkms_$(dkms_vbox_guest_version)_all.deb))
 endif
 
 ifneq ($(skipdbg),true)
@@ -548,7 +549,7 @@ binary-arch-headers: install-arch-headers
 	dh_testdir
 	dh_testroot
 ifeq ($(do_libc_dev_package),true)
-ifneq ($(DEBIAN),debian.master)
+ifeq ($(filter debian.master debian.riscv,$(DEBIAN)),)
 	echo "non-master branch building linux-libc-dev, aborting"
 	exit 1
 endif
