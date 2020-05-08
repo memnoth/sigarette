@@ -1,3 +1,18 @@
+linux-raspi (5.4.0-1011.11) focal; urgency=medium
+
+  * focal/linux-raspi: 5.4.0-1011.11 -proposed tracker (LP: #1877517)
+
+  [ Ubuntu: 5.4.0-31.35 ]
+
+  * focal/linux: 5.4.0-31.35 -proposed tracker (LP: #1877253)
+  * Intermittent display blackouts on event (LP: #1875254)
+    - drm/i915: Limit audio CDCLK>=2*BCLK constraint back to GLK only
+  * Unable to handle kernel pointer dereference in virtual kernel address space
+    on Eoan (LP: #1876645)
+    - SAUCE: overlayfs: fix shitfs special-casing
+
+ -- Stefan Bader <stefan.bader@canonical.com>  Fri, 08 May 2020 09:26:29 +0200
+
 linux-raspi (5.4.0-1010.10) focal; urgency=medium
 
   * focal/linux-raspi: 5.4.0-1010.10 -proposed tracker (LP: #1875376)
