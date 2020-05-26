@@ -1776,15 +1776,6 @@ static int of_spi_parse_dt(struct spi_controller *ctlr, struct spi_device *spi,
 	}
 	spi->chip_select = value;
 
-	/*
-	 * For descriptors associated with the device, polarity inversion is
-	 * handled in the gpiolib, so all gpio chip selects are "active high"
-	 * in the logical sense, the gpiolib will invert the line if need be.
-	 */
-	if ((ctlr->use_gpio_descriptors) && ctlr->cs_gpiods &&
-	    ctlr->cs_gpiods[spi->chip_select])
-		spi->mode |= SPI_CS_HIGH;
-
 	/* Device speed */
 	rc = of_property_read_u32(nc, "spi-max-frequency", &value);
 	if (rc) {
@@ -3055,8 +3046,8 @@ int spi_setup(struct spi_device *spi)
 
 	if (ctlr->use_gpio_descriptors && ctlr->cs_gpiods &&
 	    ctlr->cs_gpiods[spi->chip_select] && !(spi->mode & SPI_CS_HIGH)) {
-		dev_warn(&spi->dev,
-			 "setup: forcing CS_HIGH (use_gpio_descriptors)\n");
+		dev_dbg(&spi->dev,
+			"setup: forcing CS_HIGH (use_gpio_descriptors)\n");
 		spi->mode |= SPI_CS_HIGH;
 	}
 

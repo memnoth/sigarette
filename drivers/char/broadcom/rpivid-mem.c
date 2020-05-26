@@ -100,6 +100,7 @@ static int rpivid_mem_mmap(struct file *file, struct vm_area_struct *vma)
 {
 	struct rpivid_mem_priv *priv;
 	unsigned long pages;
+	unsigned long len;
 
 	priv = file->private_data;
 	pages = priv->regs_phys >> PAGE_SHIFT;
@@ -107,14 +108,13 @@ static int rpivid_mem_mmap(struct file *file, struct vm_area_struct *vma)
 	 * The address decode is far larger than the actual number of registers.
 	 * Just map the whole lot in.
 	 */
-	vma->vm_page_prot = phys_mem_access_prot(file, pages,
-						 priv->mem_window_len,
+	len = min(vma->vm_end - vma->vm_start, priv->mem_window_len);
+	vma->vm_page_prot = phys_mem_access_prot(file, pages, len,
 						 vma->vm_page_prot);
 	vma->vm_ops = &rpivid_mem_vm_ops;
 	if (remap_pfn_range(vma, vma->vm_start,
-			pages,
-			priv->mem_window_len,
-			vma->vm_page_prot)) {
+			    pages, len,
+			    vma->vm_page_prot)) {
 		return -EAGAIN;
 	}
 	return 0;
@@ -156,7 +156,7 @@ static int rpivid_mem_probe(struct platform_device *pdev)
 	ioresource = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (ioresource) {
 		priv->regs_phys = ioresource->start;
-		priv->mem_window_len = ioresource->end - ioresource->start;
+		priv->mem_window_len = (ioresource->end + 1) - ioresource->start;
 	} else {
 		dev_err(priv->dev, "failed to get IO resource");
 		err = -ENOENT;
@@ -193,32 +193,11 @@ static int rpivid_mem_probe(struct platform_device *pdev)
 		goto failed_device_create;
 	}
 
-	/* Legacy alias */
-	{
-		char *oldname = kstrdup(priv->name, GFP_KERNEL);
-
-		oldname[1] = 'a';
-		oldname[2] = 'r';
-		oldname[3] = 'g';
-		oldname[4] = 'o';
-		oldname[5] = 'n';
-		dev = device_create(priv->class, NULL, priv->devid + 1, NULL,
-				    oldname + 1);
-		kfree(oldname);
-
-		if (IS_ERR(dev)) {
-			err = PTR_ERR(dev);
-			goto failed_legacy_device_create;
-		}
-	}
-
 	dev_info(priv->dev, "%s initialised: Registers at 0x%08lx length 0x%08lx",
 		priv->name, priv->regs_phys, priv->mem_window_len);
 
 	return 0;
 
-failed_legacy_device_create:
-	device_destroy(priv->class, priv->devid);
 failed_device_create:
 	class_destroy(priv->class);
 failed_class_create:
@@ -238,7 +217,6 @@ static int rpivid_mem_remove(struct platform_device *pdev)
 	struct device *dev = &pdev->dev;
 	struct rpivid_mem_priv *priv = platform_get_drvdata(pdev);
 
-	device_destroy(priv->class, priv->devid + 1);
 	device_destroy(priv->class, priv->devid);
 	class_destroy(priv->class);
 	cdev_del(&priv->rpivid_mem_cdev);

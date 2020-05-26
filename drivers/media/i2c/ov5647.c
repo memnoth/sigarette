@@ -61,6 +61,8 @@
 #define OV5647_REG_AEC_AGC		0x3503
 #define OV5647_REG_GAIN_HI		0x350A
 #define OV5647_REG_GAIN_LO		0x350B
+#define OV5647_REG_VTS_HI		0x380e
+#define OV5647_REG_VTS_LO		0x380f
 #define OV5647_REG_FRAME_OFF_NUMBER	0x4202
 #define OV5647_REG_MIPI_CTRL00		0x4800
 #define OV5647_REG_MIPI_CTRL14		0x4814
@@ -70,25 +72,22 @@
 #define VAL_TERM 0xfe
 #define REG_DLY  0xffff
 
-#define OV5647_ROW_START		0x01
-#define OV5647_ROW_START_MIN		0
-#define OV5647_ROW_START_MAX		2004
-#define OV5647_ROW_START_DEF		54
+/* OV5647 native and active pixel array size */
+#define OV5647_NATIVE_WIDTH		2624U
+#define OV5647_NATIVE_HEIGHT		1956U
 
-#define OV5647_COLUMN_START		0x02
-#define OV5647_COLUMN_START_MIN		0
-#define OV5647_COLUMN_START_MAX		2750
-#define OV5647_COLUMN_START_DEF		16
+#define OV5647_PIXEL_ARRAY_LEFT		16U
+#define OV5647_PIXEL_ARRAY_TOP		16U
+#define OV5647_PIXEL_ARRAY_WIDTH	2592U
+#define OV5647_PIXEL_ARRAY_HEIGHT	1944U
 
-#define OV5647_WINDOW_HEIGHT		0x03
-#define OV5647_WINDOW_HEIGHT_MIN	2
-#define OV5647_WINDOW_HEIGHT_MAX	2006
-#define OV5647_WINDOW_HEIGHT_DEF	1944
+#define OV5647_VBLANK_MIN		4
+#define OV5647_VTS_MAX			32767
 
-#define OV5647_WINDOW_WIDTH		0x04
-#define OV5647_WINDOW_WIDTH_MIN		2
-#define OV5647_WINDOW_WIDTH_MAX		2752
-#define OV5647_WINDOW_WIDTH_DEF		2592
+#define OV5647_EXPOSURE_MIN		4
+#define OV5647_EXPOSURE_STEP		1
+#define OV5647_EXPOSURE_DEFAULT		1000
+#define OV5647_EXPOSURE_MAX		65535
 
 struct regval_list {
 	u16 addr;
@@ -97,6 +96,15 @@ struct regval_list {
 
 struct ov5647_mode {
 	struct v4l2_mbus_framefmt	format;
+	/* Analog crop rectangle. */
+	struct v4l2_rect crop;
+
+	u64 pixel_rate;
+	/* HTS as defined in the register set (0x380C/0x380D) */
+	int hts;
+	/* Default VTS value for this mode */
+	int vts_def;
+
 	struct regval_list		*reg_list;
 	unsigned int			num_regs;
 };
@@ -111,6 +119,10 @@ struct ov5647 {
 	struct gpio_desc		*pwdn;
 	unsigned int			flags;
 	struct v4l2_ctrl_handler	ctrls;
+	struct v4l2_ctrl		*pixel_rate;
+	struct v4l2_ctrl		*hblank;
+	struct v4l2_ctrl		*vblank;
+	struct v4l2_ctrl		*exposure;
 	bool				write_mode_regs;
 };
 
@@ -163,8 +175,6 @@ static struct regval_list ov5647_640x480_8bit[] = {
 	{0x3b07, 0x0c},
 	{0x380c, 0x07},
 	{0x380d, 0x68},
-	{0x380e, 0x03},
-	{0x380f, 0xd8},
 	{0x3814, 0x31},
 	{0x3815, 0x31},
 	{0x3708, 0x64},
@@ -253,8 +263,6 @@ static struct regval_list ov5647_2592x1944_10bit[] = {
 	{0x3b07, 0x0c},
 	{0x380c, 0x0b},
 	{0x380d, 0x1c},
-	{0x380e, 0x07},
-	{0x380f, 0xb0},
 	{0x3814, 0x11},
 	{0x3815, 0x11},
 	{0x3708, 0x64},
@@ -344,8 +352,6 @@ static struct regval_list ov5647_1080p30_10bit[] = {
 	{0x3b07, 0x0c},
 	{0x380c, 0x09},
 	{0x380d, 0x70},
-	{0x380e, 0x04},
-	{0x380f, 0x50},
 	{0x3814, 0x11},
 	{0x3815, 0x11},
 	{0x3708, 0x64},
@@ -487,8 +493,6 @@ static struct regval_list ov5647_2x2binned_10bit[] = {
 	{0x3503, 0x03},
 	{0x3820, 0x41},
 	{0x3821, 0x07},
-	{0x380E, 0x05},
-	{0x380F, 0x9B},
 	{0x350A, 0x00},
 	{0x350B, 0x10},
 	{0x3500, 0x00},
@@ -522,8 +526,6 @@ static struct regval_list ov5647_640x480_10bit[] = {
 	{0x3b07, 0x0c},
 	{0x380c, 0x07},
 	{0x380d, 0x3c},
-	{0x380e, 0x01},
-	{0x380f, 0xf8},
 	{0x3814, 0x35},
 	{0x3815, 0x35},
 	{0x3708, 0x64},
@@ -596,15 +598,24 @@ static struct ov5647_mode supported_modes_8bit[] = {
 	 * Uncentred crop (top left quarter) from 2x2 binned 1296x972 image.
 	 */
 	{
-		{
+		.format = {
 			.code = MEDIA_BUS_FMT_SBGGR8_1X8,
 			.colorspace = V4L2_COLORSPACE_SRGB,
 			.field = V4L2_FIELD_NONE,
 			.width = 640,
 			.height = 480
 		},
-		ov5647_640x480_8bit,
-		ARRAY_SIZE(ov5647_640x480_8bit)
+		.crop = {
+			.left = 0,
+			.top = 0,
+			.width = 1280,
+			.height = 960,
+		},
+		.pixel_rate = 77291670,
+		.hts = 1896,
+		.vts_def = 0x3d8,
+		.reg_list = ov5647_640x480_8bit,
+		.num_regs = ARRAY_SIZE(ov5647_640x480_8bit)
 	},
 };
 
@@ -613,64 +624,123 @@ static struct ov5647_mode supported_modes_10bit[] = {
 	 * MODE 0: 2592x1944 full resolution full FOV 10-bit mode.
 	 */
 	{
-		{
+		.format = {
 			.code = MEDIA_BUS_FMT_SBGGR10_1X10,
 			.colorspace = V4L2_COLORSPACE_SRGB,
 			.field = V4L2_FIELD_NONE,
 			.width = 2592,
 			.height = 1944
 		},
-		ov5647_2592x1944_10bit,
-		ARRAY_SIZE(ov5647_2592x1944_10bit)
+		.crop = {
+			.left = 0,
+			.top = 0,
+			.width = 2592,
+			.height = 1944
+		},
+		.pixel_rate = 87500000,
+		.hts = 2844,
+		.vts_def = 0x7b0,
+		.reg_list = ov5647_2592x1944_10bit,
+		.num_regs = ARRAY_SIZE(ov5647_2592x1944_10bit)
 	},
 	/*
 	 * MODE 1: 1080p30 10-bit mode.
 	 * Full resolution centre-cropped down to 1080p.
 	 */
 	{
-		{
+		.format = {
 			.code = MEDIA_BUS_FMT_SBGGR10_1X10,
 			.colorspace = V4L2_COLORSPACE_SRGB,
 			.field = V4L2_FIELD_NONE,
 			.width = 1920,
 			.height = 1080
 		},
-		ov5647_1080p30_10bit,
-		ARRAY_SIZE(ov5647_1080p30_10bit)
+		.crop = {
+			.left = 348,
+			.top = 434,
+			.width = 1928,
+			.height = 1080,
+		},
+		.pixel_rate = 81666700,
+		.hts = 2416,
+		.vts_def = 0x450,
+		.reg_list = ov5647_1080p30_10bit,
+		.num_regs = ARRAY_SIZE(ov5647_1080p30_10bit)
 	},
 	/*
 	 * MODE 2: 2x2 binned full FOV 10-bit mode.
 	 */
 	{
-		{
+		.format = {
 			.code = MEDIA_BUS_FMT_SBGGR10_1X10,
 			.colorspace = V4L2_COLORSPACE_SRGB,
 			.field = V4L2_FIELD_NONE,
 			.width = 1296,
 			.height = 972
 		},
-		ov5647_2x2binned_10bit,
-		ARRAY_SIZE(ov5647_2x2binned_10bit)
+		.crop = {
+			.left = 0,
+			.top = 0,
+			.width = 2592,
+			.height = 1944,
+		},
+		.pixel_rate = 81666700,
+		.hts = 1896,
+		.vts_def = 0x59b,
+		.reg_list = ov5647_2x2binned_10bit,
+		.num_regs = ARRAY_SIZE(ov5647_2x2binned_10bit)
 	},
 	/*
 	 * MODE 3: 10-bit VGA full FOV mode 60fps.
 	 * 2x2 binned and subsampled down to VGA.
 	 */
 	{
-		{
+		.format = {
 			.code = MEDIA_BUS_FMT_SBGGR10_1X10,
 			.colorspace = V4L2_COLORSPACE_SRGB,
 			.field = V4L2_FIELD_NONE,
 			.width = 640,
 			.height = 480
 		},
-		ov5647_640x480_10bit,
-		ARRAY_SIZE(ov5647_640x480_10bit)
+		.crop = {
+			.left = 16,
+			.top = 0,
+			.width = 2560,
+			.height = 1920,
+		},
+		.pixel_rate = 55000000,
+		.hts = 1852,
+		.vts_def = 0x1f8,
+		.reg_list = ov5647_640x480_10bit,
+		.num_regs = ARRAY_SIZE(ov5647_640x480_10bit)
 	},
 };
 
 /* Use 2x2 binned 10-bit mode as default. */
 #define OV5647_DEFAULT_MODE (&supported_modes_10bit[2])
+
+static int ov5647_write16(struct v4l2_subdev *sd, u16 reg, u16 val)
+{
+	int ret;
+	unsigned char data[4] = { reg >> 8, reg & 0xff, val >> 8, val & 0xff};
+	struct i2c_client *client = v4l2_get_subdevdata(sd);
+
+	ret = i2c_master_send(client, data, 4);
+	/*
+	 * Writing the wrong number of bytes also needs to be flagged as an
+	 * error. Success needs to produce a 0 return code.
+	 */
+	if (ret == 4) {
+		ret = 0;
+	} else {
+		dev_dbg(&client->dev, "%s: i2c write error, reg: %x\n",
+			__func__, reg);
+		if (ret >= 0)
+			ret = -EINVAL;
+	}
+
+	return ret;
+}
 
 static int ov5647_write(struct v4l2_subdev *sd, u16 reg, u8 val)
 {
@@ -971,6 +1041,56 @@ static const struct v4l2_subdev_core_ops ov5647_subdev_core_ops = {
 #endif
 };
 
+static const struct v4l2_rect *
+__ov5647_get_pad_crop(struct ov5647 *ov5647, struct v4l2_subdev_pad_config *cfg,
+		      unsigned int pad, enum v4l2_subdev_format_whence which)
+{
+	switch (which) {
+	case V4L2_SUBDEV_FORMAT_TRY:
+		return v4l2_subdev_get_try_crop(&ov5647->sd, cfg, pad);
+	case V4L2_SUBDEV_FORMAT_ACTIVE:
+		return &ov5647->mode->crop;
+	}
+
+	return NULL;
+}
+
+static int ov5647_get_selection(struct v4l2_subdev *sd,
+				struct v4l2_subdev_pad_config *cfg,
+				struct v4l2_subdev_selection *sel)
+{
+	switch (sel->target) {
+	case V4L2_SEL_TGT_CROP: {
+		struct ov5647 *state = to_state(sd);
+
+		mutex_lock(&state->lock);
+		sel->r = *__ov5647_get_pad_crop(state, cfg, sel->pad,
+						sel->which);
+		mutex_unlock(&state->lock);
+
+		return 0;
+	}
+
+	case V4L2_SEL_TGT_NATIVE_SIZE:
+		sel->r.top = 0;
+		sel->r.left = 0;
+		sel->r.width = OV5647_NATIVE_WIDTH;
+		sel->r.height = OV5647_NATIVE_HEIGHT;
+
+		return 0;
+
+	case V4L2_SEL_TGT_CROP_DEFAULT:
+		sel->r.top = OV5647_PIXEL_ARRAY_TOP;
+		sel->r.left = OV5647_PIXEL_ARRAY_LEFT;
+		sel->r.width = OV5647_PIXEL_ARRAY_WIDTH;
+		sel->r.height = OV5647_PIXEL_ARRAY_HEIGHT;
+
+		return 0;
+	}
+
+	return -EINVAL;
+}
+
 static int ov5647_s_stream(struct v4l2_subdev *sd, int enable)
 {
 	struct ov5647 *state = to_state(sd);
@@ -1074,8 +1194,10 @@ static int ov5647_set_fmt(struct v4l2_subdev *sd,
 	else
 		mode = mode_8bit;
 
-	if (!mode)
+	if (!mode) {
+		mutex_unlock(&state->lock);
 		return -EINVAL;
+	}
 
 	*fmt = mode->format;
 	if (format->which == V4L2_SUBDEV_FORMAT_TRY) {
@@ -1086,9 +1208,36 @@ static int ov5647_set_fmt(struct v4l2_subdev *sd,
 		 * If we have changed modes, write the I2C register list on
 		 * a stream_on().
 		 */
+		int exposure_max, exposure_def, hblank;
+
 		if (state->mode != mode)
 			state->write_mode_regs = true;
 		state->mode = mode;
+
+		__v4l2_ctrl_modify_range(state->pixel_rate,
+					 mode->pixel_rate,
+					 mode->pixel_rate, 1,
+					 mode->pixel_rate);
+		hblank = mode->hts - mode->format.width;
+		__v4l2_ctrl_modify_range(state->hblank, hblank, hblank, 1,
+					 hblank);
+
+		__v4l2_ctrl_modify_range(state->vblank,
+					 OV5647_VBLANK_MIN,
+					 OV5647_VTS_MAX - mode->format.height,
+					 1,
+					 mode->vts_def - mode->format.height);
+		__v4l2_ctrl_s_ctrl(state->vblank,
+				   mode->vts_def - mode->format.height);
+
+		exposure_max = mode->vts_def - 4;
+		exposure_def = (exposure_max < OV5647_EXPOSURE_DEFAULT) ?
+					exposure_max : OV5647_EXPOSURE_DEFAULT;
+		__v4l2_ctrl_modify_range(state->exposure,
+					 state->exposure->minimum,
+					 exposure_max,
+					 state->exposure->step,
+					 exposure_def);
 	}
 
 	mutex_unlock(&state->lock);
@@ -1122,6 +1271,7 @@ static const struct v4l2_subdev_pad_ops ov5647_subdev_pad_ops = {
 	.enum_mbus_code = ov5647_enum_mbus_code,
 	.set_fmt =	  ov5647_set_fmt,
 	.get_fmt =	  ov5647_get_fmt,
+	.get_selection =  ov5647_get_selection,
 	.enum_frame_size = ov5647_enum_frame_size,
 };
 
@@ -1170,10 +1320,10 @@ static int ov5647_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 				v4l2_subdev_get_try_crop(sd, fh->pad, 0);
 	struct ov5647 *state = to_state(sd);
 
-	crop->left = OV5647_COLUMN_START_DEF;
-	crop->top = OV5647_ROW_START_DEF;
-	crop->width = OV5647_WINDOW_WIDTH_DEF;
-	crop->height = OV5647_WINDOW_HEIGHT_DEF;
+	crop->left = OV5647_PIXEL_ARRAY_LEFT;
+	crop->top = OV5647_PIXEL_ARRAY_TOP;
+	crop->width = OV5647_PIXEL_ARRAY_WIDTH;
+	crop->height = OV5647_PIXEL_ARRAY_HEIGHT;
 
 	/* Set the default format to the same as the sensor. */
 	*format = state->mode->format;
@@ -1280,6 +1430,19 @@ static int ov5647_s_ctrl(struct v4l2_ctrl *ctrl)
 
 	/* v4l2_ctrl_lock() locks our own mutex */
 
+	if (ctrl->id == V4L2_CID_VBLANK) {
+		int exposure_max, exposure_def;
+
+		/* Update max exposure while meeting expected vblanking */
+		exposure_max = state->mode->format.height + ctrl->val - 4;
+		exposure_def = (exposure_max < OV5647_EXPOSURE_DEFAULT) ?
+			exposure_max : OV5647_EXPOSURE_DEFAULT;
+		__v4l2_ctrl_modify_range(state->exposure,
+					 state->exposure->minimum,
+					 exposure_max, state->exposure->step,
+					 exposure_def);
+	}
+
 	/*
 	 * If the device is not powered up by the host driver do
 	 * not apply any controls to H/W at this time. Instead
@@ -1304,6 +1467,16 @@ static int ov5647_s_ctrl(struct v4l2_ctrl *ctrl)
 	case V4L2_CID_EXPOSURE:
 		ret = ov5647_s_exposure(sd, ctrl->val);
 		break;
+	case V4L2_CID_PIXEL_RATE:
+		/* Read-only, but we adjust it based on mode. */
+		break;
+	case V4L2_CID_HBLANK:
+		/* Read-only, but we adjust it based on mode. */
+		break;
+	case V4L2_CID_VBLANK:
+		ret = ov5647_write16(sd, OV5647_REG_VTS_HI,
+				     state->mode->format.height + ctrl->val);
+		break;
 	default:
 		dev_info(&client->dev,
 			 "ctrl(id:0x%x,val:0x%x) is not handled\n",
@@ -1327,7 +1500,7 @@ static int ov5647_probe(struct i2c_client *client)
 	struct v4l2_subdev *sd;
 	struct device_node *np = client->dev.of_node;
 	u32 xclk_freq;
-	struct v4l2_ctrl *ctrl;
+	int hblank, exposure_max, exposure_def;
 
 	sensor = devm_kzalloc(dev, sizeof(*sensor), GFP_KERNEL);
 	if (!sensor)
@@ -1361,7 +1534,7 @@ static int ov5647_probe(struct i2c_client *client)
 	mutex_init(&sensor->lock);
 
 	/* Initialise controls. */
-	v4l2_ctrl_handler_init(&sensor->ctrls, 3);
+	v4l2_ctrl_handler_init(&sensor->ctrls, 7);
 	v4l2_ctrl_new_std(&sensor->ctrls, &ov5647_ctrl_ops,
 			  V4L2_CID_AUTOGAIN,
 			  0,  /* min */
@@ -1379,20 +1552,45 @@ static int ov5647_probe(struct i2c_client *client)
 			       V4L2_EXPOSURE_MANUAL,  /* max */
 			       0,                     /* skip_mask */
 			       V4L2_EXPOSURE_MANUAL); /* default */
-	ctrl = v4l2_ctrl_new_std(&sensor->ctrls, &ov5647_ctrl_ops,
-				 V4L2_CID_EXPOSURE,
-				 4,     /* min lines */
-				 65535, /* max lines (4+8+4 bits)*/
-				 1,     /* step */
-				 1000); /* default number of lines */
-	ctrl->flags |= V4L2_CTRL_FLAG_EXECUTE_ON_WRITE;
-	ctrl = v4l2_ctrl_new_std(&sensor->ctrls, &ov5647_ctrl_ops,
-				 V4L2_CID_ANALOGUE_GAIN,
-				 16,   /* min, 16 = 1.0x */
-				 1023, /* max (10 bits) */
-				 1,    /* step */
-				 32);  /* default, 32 = 2.0x */
-	ctrl->flags |= V4L2_CTRL_FLAG_EXECUTE_ON_WRITE;
+	v4l2_ctrl_new_std(&sensor->ctrls, &ov5647_ctrl_ops,
+			  V4L2_CID_ANALOGUE_GAIN,
+			  16,   /* min, 16 = 1.0x */
+			  1023, /* max (10 bits) */
+			  1,    /* step */
+			  32);  /* default, 32 = 2.0x */
+
+	/* Set the default mode before we init the subdev */
+	sensor->mode = OV5647_DEFAULT_MODE;
+
+	exposure_max = sensor->mode->vts_def - 4;
+	exposure_def = (exposure_max < OV5647_EXPOSURE_DEFAULT) ?
+		exposure_max : OV5647_EXPOSURE_DEFAULT;
+	sensor->exposure = v4l2_ctrl_new_std(&sensor->ctrls, &ov5647_ctrl_ops,
+					     V4L2_CID_EXPOSURE,
+					     OV5647_EXPOSURE_MIN, exposure_max,
+					     OV5647_EXPOSURE_STEP,
+					     exposure_def);
+
+	/* By default, PIXEL_RATE is read only, but it does change per mode */
+	sensor->pixel_rate = v4l2_ctrl_new_std(&sensor->ctrls, &ov5647_ctrl_ops,
+					       V4L2_CID_PIXEL_RATE,
+					       sensor->mode->pixel_rate,
+					       sensor->mode->pixel_rate, 1,
+					       sensor->mode->pixel_rate);
+
+	/* By default, HBLANK is read only, but it does change per mode */
+	hblank = sensor->mode->hts - sensor->mode->format.width;
+	sensor->hblank = v4l2_ctrl_new_std(&sensor->ctrls, &ov5647_ctrl_ops,
+					   V4L2_CID_HBLANK, hblank, hblank, 1,
+					   hblank);
+	sensor->hblank->flags |= V4L2_CTRL_FLAG_READ_ONLY;
+
+	sensor->vblank = v4l2_ctrl_new_std(&sensor->ctrls, &ov5647_ctrl_ops,
+					   V4L2_CID_VBLANK, OV5647_VBLANK_MIN,
+					   OV5647_VTS_MAX -
+						sensor->mode->format.height, 1,
+					   sensor->mode->vts_def -
+						sensor->mode->format.height);
 
 	if (sensor->ctrls.error) {
 		ret = sensor->ctrls.error;
@@ -1402,16 +1600,14 @@ static int ov5647_probe(struct i2c_client *client)
 	}
 	sensor->sd.ctrl_handler = &sensor->ctrls;
 
-	/* Set the default mode before we init the subdev */
-	sensor->mode = OV5647_DEFAULT_MODE;
-
 	/* Write out the register set over I2C on stream-on. */
 	sensor->write_mode_regs = true;
 
 	sd = &sensor->sd;
 	v4l2_i2c_subdev_init(sd, client, &ov5647_subdev_ops);
 	sensor->sd.internal_ops = &ov5647_subdev_internal_ops;
-	sensor->sd.flags |= V4L2_SUBDEV_FL_HAS_DEVNODE;
+	sensor->sd.flags |= V4L2_SUBDEV_FL_HAS_DEVNODE |
+			    V4L2_SUBDEV_FL_HAS_EVENTS;
 
 	sensor->pad.flags = MEDIA_PAD_FL_SOURCE;
 	sd->entity.function = MEDIA_ENT_F_CAM_SENSOR;

@@ -42,11 +42,11 @@ struct vc4_hdmi_variant {
 	/* Set to true when the audio support is available */
 	bool audio_available;
 
-	/* Set to true when the CEC support is available */
-	bool cec_available;
-
 	/* Maximum pixel clock supported by the controller (in Hz) */
 	unsigned long long max_pixel_clock;
+
+	/* Input clock frequency of CEC block (in Hz) */
+	unsigned long cec_input_clock;
 
 	/* List of the registers available on that variant */
 	const struct vc4_hdmi_register *registers;
@@ -92,8 +92,14 @@ struct vc4_hdmi_variant {
 	/* Callback to get hsm clock */
 	u32 (*get_hsm_clock)(struct vc4_hdmi *vc4_hdmi);
 
+	/* Callback to get hsm clock */
+	u32 (*calc_hsm_clock)(struct vc4_hdmi *vc4_hdmi, unsigned long pixel_rate);
+
 	/* Callback to get channel map */
 	u32 (*channel_map)(struct vc4_hdmi *vc4_hdmi, u32 channel_mask);
+
+	/* Bitmask for CEC events */
+	u32 cec_mask;
 };
 
 /* HDMI audio information */
@@ -137,6 +143,8 @@ struct vc4_hdmi {
 	void __iomem *ram_regs;
 	/* VC5 Only */
 	void __iomem *rm_regs;
+	/* VC5 Only */
+	void __iomem *intr2_regs;
 
 	int hpd_gpio;
 	bool hpd_active_low;
