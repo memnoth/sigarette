@@ -411,14 +411,20 @@ void rtw_set_channel(struct rtw_dev *rtwdev)
 
 	rtw_phy_set_tx_power_level(rtwdev, center_chan);
 
-	/* 11N chip uses driver IQK that takes lot of time, so move here
-	 * to avoid interferencing 4 way handshake.
+	/* If set channel isn't for scanning, we'll do RF calibration once in
+	 * this channel while mgd_prepare_tx.
 	 */
-	if (rtw_chip_wcpu_11n(rtwdev) &&
-	    !(hw->conf.flags & IEEE80211_CONF_IDLE) &&
-	    !test_bit(RTW_FLAG_SCANNING, rtwdev->flags) &&
-	    !test_bit(RTW_FLAG_INACTIVE_PS, rtwdev->flags)) {
+	if (!test_bit(RTW_FLAG_SCANNING, rtwdev->flags))
 		rtwdev->need_rfk = true;
+}
+
+void rtw_chip_prepare_tx(struct rtw_dev *rtwdev)
+{
+	struct rtw_chip_info *chip = rtwdev->chip;
+
+	if (rtwdev->need_rfk) {
+		rtwdev->need_rfk = false;
+		chip->ops->phy_calibration(rtwdev);
 	}
 }
 
