@@ -61,15 +61,7 @@ do
 			fi
 
 			# Download from the available pools.
-			for pool in $( apt-cache policy | grep '^ [^ ]' | sort -r -n -k 1,1 -s | \
-			    awk '
-				($2 ~ /^http/) {
-				    if (!($2 in E)) {
-					E[$2]=1;
-					print $2;
-				    }
-				}
-			    ')
+			for pool in $( grep -h '^deb ' /etc/apt/sources.list /etc/apt/sources.list.d/*.list | awk '{print $2}' | sort -u )
 			do
 				if package_present "$lpackage"; then
 					break
@@ -242,7 +234,7 @@ done
 # as squirreled away, and the log in case it is useful.  Finally pass a formed
 # signing command line in case we need to do that.
 dkms_build_specific="$srcdir/$0--$package"
-dkms_build_generic=$(echo "$dkms_build_specific" | sed -n -e 's/-[0-9][0-9]*$/-N/p')
+dkms_build_generic=$(echo "$dkms_build_specific" | sed -n -e 's/-[0-9][0-9]*[a-z]*$/-N/p')
 for dkms_build in "$dkms_build_specific" "$dkms_build_generic"
 do
 	if [ -z "$dkms_build" -o ! -e "$dkms_build" ]; then

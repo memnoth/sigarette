@@ -1967,6 +1967,19 @@ static int bcm2835_codec_create_component(struct bcm2835_codec_ctx *ctx)
 					MMAL_PARAMETER_VIDEO_ENCODE_SPS_TIMING,
 					&param, sizeof(param));
 
+		/* Enable inserting headers into the first frame */
+		vchiq_mmal_port_parameter_set(ctx->dev->instance,
+					      &ctx->component->control,
+					      MMAL_PARAMETER_VIDEO_ENCODE_HEADERS_WITH_FRAME,
+					      &param, sizeof(param));
+		/*
+		 * Avoid fragmenting the buffers over multiple frames (unless
+		 * the frame is bigger than the whole buffer)
+		 */
+		vchiq_mmal_port_parameter_set(ctx->dev->instance,
+					      &ctx->component->control,
+					      MMAL_PARAMETER_MINIMISE_FRAGMENTATION,
+					      &param, sizeof(param));
 	} else {
 		if (ctx->q_data[V4L2_M2M_DST].sizeimage <
 			ctx->component->output[0].minimum_buffer.size)

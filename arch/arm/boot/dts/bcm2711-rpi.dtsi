@@ -4,7 +4,6 @@
 / {
 	soc {
 		/delete-node/ v3d@7ec00000;
-		/delete-node/ mailbox@7e00b840;
 	};
 
 	__overrides__ {
@@ -51,16 +50,6 @@
 };
 
 &soc {
-	thermal: thermal@7d5d2200 {
-		compatible = "brcm,avs-tmon-bcm2711";
-		reg = <0x7d5d2200 0x2c>;
-		interrupts = <GIC_SPI 137 IRQ_TYPE_LEVEL_HIGH>;
-		interrupt-names = "tmon";
-		clocks = <&clocks BCM2835_CLOCK_TSENS>;
-		#thermal-sensor-cells = <0>;
-		status = "okay";
-	};
-
 	/delete-node/ audio;
 };
 
@@ -86,12 +75,6 @@
 			"dma14";
 		#dma-cells = <1>;
 		brcm,dma-channel-mask = <0x7800>;
-	};
-
-	vchiq: mailbox@7e00b840 {
-		compatible = "brcm,bcm2711-vchiq";
-		reg = <0 0x7e00b840  0x0 0x3c>;
-		interrupts = <GIC_SPI 34 IRQ_TYPE_LEVEL_HIGH>;
 	};
 
 	xhci: xhci@7e9c0000 {
@@ -127,18 +110,6 @@
 	};
 };
 
-&vchiq {
-	/* Onboard audio
-	 * This node is replicated because the original from bcm270x-rpi.dtsi
-	 * was deleted when the vchiq node was deleted above.
-	 */
-	audio: bcm2835_audio {
-		compatible = "brcm,bcm2835-audio";
-		brcm,pwm-channels = <8>;
-		status = "disabled";
-	};
-};
-
 &dma {
 	/* The VPU firmware uses DMA channel 11 for VCHIQ */
 	brcm,dma-channel-mask = <0x1f5>;
@@ -147,6 +118,10 @@
 &dma40 {
 	/* The VPU firmware DMA channel 11 for VCHIQ */
 	brcm,dma-channel-mask = <0x7000>;
+};
+
+&vchiq {
+	compatible = "brcm,bcm2711-vchiq";
 };
 
 &firmwarekms {
@@ -190,10 +165,6 @@
 &gpio {
 	interrupts = <GIC_SPI 113 IRQ_TYPE_LEVEL_HIGH>,
 		     <GIC_SPI 114 IRQ_TYPE_LEVEL_HIGH>;
-};
-
-&cpu_thermal {
-	 thermal-sensors = <&thermal>;
 };
 
 &genet {

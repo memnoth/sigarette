@@ -64,6 +64,17 @@
 						 IRQ_TYPE_LEVEL_HIGH)>;
 		};
 
+		avs_monitor: avs-monitor@7d5d2000 {
+			compatible = "brcm,bcm2711-avs-monitor",
+				     "syscon", "simple-mfd";
+			reg = <0x7d5d2000 0xf00>;
+
+			thermal: thermal {
+				compatible = "brcm,bcm2711-thermal";
+				#thermal-sensor-cells = <0>;
+			};
+		};
+
 		dma: dma@7e007000 {
 			compatible = "brcm,bcm2835-dma";
 			reg = <0x7e007000 0xb00>;
@@ -117,7 +128,7 @@
 		};
 
 		uart2: serial@7e201400 {
-			compatible = "arm,pl011", "arm,primecell";
+			compatible = "brcm,bcm2835-pl011", "arm,pl011", "arm,primecell";  /* UBUNTU: "brcm,bcm2835-pl011" is required for u-boot 2019.07 */
 			reg = <0x7e201400 0x200>;
 			interrupts = <GIC_SPI 121 IRQ_TYPE_LEVEL_HIGH>;
 			clocks = <&clocks BCM2835_CLOCK_UART>,
@@ -128,7 +139,7 @@
 		};
 
 		uart3: serial@7e201600 {
-			compatible = "arm,pl011", "arm,primecell";
+			compatible = "brcm,bcm2835-pl011", "arm,pl011", "arm,primecell";  /* UBUNTU: "brcm,bcm2835-pl011" is required for u-boot 2019.07 */
 			reg = <0x7e201600 0x200>;
 			interrupts = <GIC_SPI 121 IRQ_TYPE_LEVEL_HIGH>;
 			clocks = <&clocks BCM2835_CLOCK_UART>,
@@ -139,7 +150,7 @@
 		};
 
 		uart4: serial@7e201800 {
-			compatible = "arm,pl011", "arm,primecell";
+			compatible = "brcm,bcm2835-pl011", "arm,pl011", "arm,primecell";  /* UBUNTU: "brcm,bcm2835-pl011" is required for u-boot 2019.07 */
 			reg = <0x7e201800 0x200>;
 			interrupts = <GIC_SPI 121 IRQ_TYPE_LEVEL_HIGH>;
 			clocks = <&clocks BCM2835_CLOCK_UART>,
@@ -150,7 +161,7 @@
 		};
 
 		uart5: serial@7e201a00 {
-			compatible = "arm,pl011", "arm,primecell";
+			compatible = "brcm,bcm2835-pl011", "arm,pl011", "arm,primecell";  /* UBUNTU: "brcm,bcm2835-pl011" is required for u-boot 2019.07 */
 			reg = <0x7e201a00 0x200>;
 			interrupts = <GIC_SPI 121 IRQ_TYPE_LEVEL_HIGH>;
 			clocks = <&clocks BCM2835_CLOCK_UART>,
@@ -514,6 +525,7 @@
 
 &cpu_thermal {
 	coefficients = <(-487) 410040>;
+	thermal-sensors = <&thermal>;
 };
 
 &dsi0 {
@@ -525,7 +537,7 @@
 };
 
 &gpio {
-	compatible = "brcm,bcm2711-gpio", "brcm,bcm2835-gpio";
+	compatible = "brcm,bcm2711-gpio", "brcm,bcm2835-gpio";  /* UBUNTU: "brcm,bcm2835-gpio" is required for u-boot 2019.07 */
 	interrupts = <GIC_SPI 113 IRQ_TYPE_LEVEL_HIGH>,
 		     <GIC_SPI 114 IRQ_TYPE_LEVEL_HIGH>,
 		     <GIC_SPI 115 IRQ_TYPE_LEVEL_HIGH>,
