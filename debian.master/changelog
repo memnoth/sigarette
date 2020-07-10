@@ -1,3 +1,12 @@
+linux (5.4.0-42.46) focal; urgency=medium
+
+  * focal/linux: 5.4.0-42.46 -proposed tracker (LP: #1887069)
+
+  * linux 4.15.0-109-generic network DoS regression vs -108 (LP: #1886668)
+    - SAUCE: Revert "netprio_cgroup: Fix unlimited memory leak of v2 cgroups"
+
+ -- Khalid Elmously <khalid.elmously@canonical.com>  Thu, 09 Jul 2020 19:50:26 -0400
+
 linux (5.4.0-41.45) focal; urgency=medium
 
   * focal/linux: 5.4.0-41.45 -proposed tracker (LP: #1885855)
