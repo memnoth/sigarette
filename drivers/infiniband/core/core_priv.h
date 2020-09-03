@@ -321,7 +321,7 @@ static inline struct ib_qp *_ib_create_qp(struct ib_device *dev,
 					  struct ib_pd *pd,
 					  struct ib_qp_init_attr *attr,
 					  struct ib_udata *udata,
-					  struct ib_uobject *uobj)
+					  struct ib_uqp_object *uobj)
 {
 	enum ib_qp_type qp_type = attr->qp_type;
 	struct ib_qp *qp;
@@ -340,7 +340,6 @@ static inline struct ib_qp *_ib_create_qp(struct ib_device *dev,
 	qp->real_qp = qp;
 
 	qp->qp_type = attr->qp_type;
-	qp->qp_context = attr->qp_context;
 	qp->rwq_ind_tbl = attr->rwq_ind_tbl;
 	qp->send_cq = attr->send_cq;
 	qp->recv_cq = attr->recv_cq;
@@ -414,5 +413,8 @@ struct rdma_umap_priv {
 void rdma_umap_priv_init(struct rdma_umap_priv *priv,
 			 struct vm_area_struct *vma,
 			 struct rdma_user_mmap_entry *entry);
+
+void ib_cq_pool_init(struct ib_device *dev);
+void ib_cq_pool_destroy(struct ib_device *dev);
 
 #endif /* _CORE_PRIV_H */

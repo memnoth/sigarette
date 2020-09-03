@@ -14,23 +14,30 @@
  * Pi's firmware display stack.
  */
 
-#include "drm/drm_atomic_helper.h"
-#include "drm/drm_gem_framebuffer_helper.h"
-#include "drm/drm_plane_helper.h"
-#include "drm/drm_crtc_helper.h"
-#include "drm/drm_fourcc.h"
-#include "drm/drm_probe_helper.h"
-#include "drm/drm_drv.h"
-#include "drm/drm_vblank.h"
-#include "linux/clk.h"
-#include "linux/debugfs.h"
-#include "drm/drm_fb_cma_helper.h"
-#include "linux/component.h"
-#include "linux/of_device.h"
+#include <drm/drm_atomic_helper.h>
+#include <drm/drm_crtc_helper.h>
+#include <drm/drm_drv.h>
+#include <drm/drm_fb_cma_helper.h>
+#include <drm/drm_fourcc.h>
+#include <drm/drm_gem_framebuffer_helper.h>
+#include <drm/drm_plane_helper.h>
+#include <drm/drm_probe_helper.h>
+#include <drm/drm_vblank.h>
+
+#include <linux/component.h>
+#include <linux/clk.h>
+#include <linux/debugfs.h>
+#include <linux/module.h>
+
+#include <soc/bcm2835/raspberrypi-firmware.h>
+
 #include "vc4_drv.h"
 #include "vc4_regs.h"
 #include "vc_image_types.h"
-#include <soc/bcm2835/raspberrypi-firmware.h>
+
+int fkms_max_refresh_rate = 85;
+module_param(fkms_max_refresh_rate, int, 0644);
+MODULE_PARM_DESC(fkms_max_refresh_rate, "Max supported refresh rate");
 
 struct get_display_cfg {
 	u32  max_pixel_clock[2];  //Max pixel clock for each display
@@ -38,6 +45,7 @@ struct get_display_cfg {
 
 struct vc4_fkms {
 	struct get_display_cfg cfg;
+	bool bcm2711;
 };
 
 #define PLANES_PER_CRTC		3
@@ -150,6 +158,8 @@ struct set_timings {
 #define TIMINGS_FLAGS_RGB_LIMITED	BIT(8)
 /* DVI monitor, therefore disable infoframes. Not set corresponds to HDMI. */
 #define TIMINGS_FLAGS_DVI		BIT(9)
+/* Double clock */
+#define TIMINGS_FLAGS_DBL_CLK		BIT(10)
 };
 
 struct mailbox_set_mode {
@@ -262,23 +272,6 @@ struct vc4_crtc {
 static inline struct vc4_crtc *to_vc4_crtc(struct drm_crtc *crtc)
 {
 	return container_of(crtc, struct vc4_crtc, base);
-}
-
-struct fkms_crtc_state {
-	struct drm_crtc_state base;
-
-	struct {
-		unsigned int left;
-		unsigned int right;
-		unsigned int top;
-		unsigned int bottom;
-	} margins;
-};
-
-static inline struct fkms_crtc_state *
-to_fkms_crtc_state(struct drm_crtc_state *crtc_state)
-{
-	return (struct fkms_crtc_state *)crtc_state;
 }
 
 struct vc4_fkms_encoder {
@@ -414,7 +407,7 @@ static void vc4_fkms_crtc_get_margins(struct drm_crtc_state *state,
 				      unsigned int *left, unsigned int *right,
 				      unsigned int *top, unsigned int *bottom)
 {
-	struct fkms_crtc_state *vc4_state = to_fkms_crtc_state(state);
+	struct vc4_crtc_state *vc4_state = to_vc4_crtc_state(state);
 	struct drm_connector_state *conn_state;
 	struct drm_connector *conn;
 	int i;
@@ -427,7 +420,7 @@ static void vc4_fkms_crtc_get_margins(struct drm_crtc_state *state,
 	/* We have to interate over all new connector states because
 	 * vc4_fkms_crtc_get_margins() might be called before
 	 * vc4_fkms_crtc_atomic_check() which means margins info in
-	 * fkms_crtc_state might be outdated.
+	 * vc4_crtc_state might be outdated.
 	 */
 	for_each_new_connector_in_state(state->state, conn, conn_state, i) {
 		if (conn_state->crtc != state->crtc)
@@ -936,6 +929,11 @@ static void vc4_crtc_mode_set_nofb(struct drm_crtc *crtc)
 		break;
 	}
 
+	if (mode->flags & DRM_MODE_FLAG_INTERLACE)
+		mb.timings.flags |= TIMINGS_FLAGS_INTERLACE;
+	if (mode->flags & DRM_MODE_FLAG_DBLCLK)
+		mb.timings.flags |= TIMINGS_FLAGS_DBL_CLK;
+
 	mb.timings.video_id_code = frame.avi.video_code;
 
 	if (!vc4_encoder->hdmi_monitor) {
@@ -1066,8 +1064,10 @@ vc4_crtc_mode_valid(struct drm_crtc *crtc, const struct drm_display_mode *mode)
 		return MODE_NO_DBLESCAN;
 	}
 
-	/* Disable refresh rates > 85Hz as limited gain from them */
-	if (drm_mode_vrefresh(mode) > 85)
+	/* Disable refresh rates > defined threshold (default 85Hz) as limited
+	 * gain from them
+	 */
+	if (drm_mode_vrefresh(mode) > fkms_max_refresh_rate)
 		return MODE_BAD_VVALUE;
 
 	/* Limit the pixel clock based on the HDMI clock limits from the
@@ -1086,13 +1086,29 @@ vc4_crtc_mode_valid(struct drm_crtc *crtc, const struct drm_display_mode *mode)
 		break;
 	}
 
+	/* Pi4 can't generate odd horizontal timings on HDMI, so reject modes
+	 * that would set them.
+	 */
+	if (fkms->bcm2711 &&
+	    (vc4_crtc->display_number == 2 || vc4_crtc->display_number == 7) &&
+	    !(mode->flags & DRM_MODE_FLAG_DBLCLK) &&
+	    ((mode->hdisplay |				/* active */
+	      (mode->hsync_start - mode->hdisplay) |	/* front porch */
+	      (mode->hsync_end - mode->hsync_start) |	/* sync pulse */
+	      (mode->htotal - mode->hsync_end)) & 1))	/* back porch */ {
+		DRM_DEBUG_KMS("[CRTC:%d] Odd timing rejected %u %u %u %u.\n",
+			      crtc->base.id, mode->hdisplay, mode->hsync_start,
+			      mode->hsync_end, mode->htotal);
+		return MODE_H_ILLEGAL;
+	}
+
 	return MODE_OK;
 }
 
 static int vc4_crtc_atomic_check(struct drm_crtc *crtc,
 				 struct drm_crtc_state *state)
 {
-	struct fkms_crtc_state *vc4_state = to_fkms_crtc_state(state);
+	struct vc4_crtc_state *vc4_state = to_vc4_crtc_state(state);
 	struct drm_connector *conn;
 	struct drm_connector_state *conn_state;
 	int i;
@@ -1202,13 +1218,13 @@ static int vc4_page_flip(struct drm_crtc *crtc,
 static struct drm_crtc_state *
 vc4_crtc_duplicate_state(struct drm_crtc *crtc)
 {
-	struct fkms_crtc_state *vc4_state, *old_vc4_state;
+	struct vc4_crtc_state *vc4_state, *old_vc4_state;
 
 	vc4_state = kzalloc(sizeof(*vc4_state), GFP_KERNEL);
 	if (!vc4_state)
 		return NULL;
 
-	old_vc4_state = to_fkms_crtc_state(crtc->state);
+	old_vc4_state = to_vc4_crtc_state(crtc->state);
 	vc4_state->margins = old_vc4_state->margins;
 
 	__drm_atomic_helper_crtc_duplicate_state(crtc, &vc4_state->base);
@@ -1271,6 +1287,8 @@ static const struct drm_crtc_helper_funcs vc4_crtc_helper_funcs = {
 
 static const struct of_device_id vc4_firmware_kms_dt_match[] = {
 	{ .compatible = "raspberrypi,rpi-firmware-kms" },
+	{ .compatible = "raspberrypi,rpi-firmware-kms-2711",
+	  .data = (void *)1 },
 	{}
 };
 
@@ -1632,7 +1650,7 @@ vc4_fkms_connector_init(struct drm_device *dev, struct drm_encoder *encoder,
 				   DRM_MODE_CONNECTOR_HDMIA);
 		drm_connector_helper_add(connector,
 					 &vc4_fkms_connector_helper_funcs);
-		connector->interlace_allowed = 0;
+		connector->interlace_allowed = 1;
 	}
 
 	ret = drm_mode_create_tv_margin_properties(dev);
@@ -1804,6 +1822,7 @@ static int vc4_fkms_bind(struct device *dev, struct device *master, void *data)
 	struct drm_device *drm = dev_get_drvdata(master);
 	struct vc4_dev *vc4 = to_vc4_dev(drm);
 	struct device_node *firmware_node;
+	const struct of_device_id *match;
 	struct vc4_crtc **crtc_list;
 	u32 num_displays, display_num;
 	struct vc4_fkms *fkms;
@@ -1816,11 +1835,17 @@ static int vc4_fkms_bind(struct device *dev, struct device *master, void *data)
 	if (!fkms)
 		return -ENOMEM;
 
+	match = of_match_device(vc4_firmware_kms_dt_match, dev);
+	if (!match)
+		return -ENODEV;
+	if (match->data)
+		fkms->bcm2711 = true;
+
 	/* firmware kms doesn't have precise a scanoutpos implementation, so
 	 * we can't do the precise vblank timestamp mode.
 	 */
-	drm->driver->get_scanout_position = NULL;
-	drm->driver->get_vblank_timestamp = NULL;
+	//drm->driver->get_scanout_position = NULL;
+	//drm->driver->get_vblank_timestamp = NULL;
 
 	firmware_node = of_parse_phandle(dev->of_node, "brcm,firmware", 0);
 	vc4->firmware = rpi_firmware_get(firmware_node);

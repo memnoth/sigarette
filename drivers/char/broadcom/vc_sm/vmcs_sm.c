@@ -915,7 +915,7 @@ static void vmcs_sm_release_resource(struct sm_resource_t *resource, int force)
 
 	/* Make sure the resource we're removing is unmapped first */
 	if (resource->map_count && !list_empty(&resource->map_list)) {
-		down_write(&current->mm->mmap_sem);
+		mmap_write_lock(current->mm);
 		list_for_each_entry_safe(map, map_tmp, &resource->map_list,
 					 resource_map_list) {
 			ret =
@@ -926,7 +926,7 @@ static void vmcs_sm_release_resource(struct sm_resource_t *resource, int force)
 					__func__, resource);
 			}
 		}
-		up_write(&current->mm->mmap_sem);
+		mmap_write_unlock(current->mm);
 	}
 
 	/* Free up the videocore allocated resource. */
@@ -1289,11 +1289,12 @@ static int clean_invalid_contiguous_mem_2d(const void __user *addr,
 }
 
 /* Clean/invalid/flush cache of which buffer may be non-pinned. */
-/* The caller must lock current->mm->mmap_sem for read. */
+/* The caller must lock current->mm for read. */
 static int clean_invalid_mem_walk(unsigned long addr, const size_t size,
 		const unsigned cache_op)
 {
 	pgd_t *pgd;
+	p4d_t *p4d;
 	pud_t *pud;
 	pmd_t *pmd;
 	pte_t *pte;
@@ -1319,7 +1320,11 @@ static int clean_invalid_mem_walk(unsigned long addr, const size_t size,
 			continue;
 
 		/* Walk PUD */
-		pud = pud_offset(pgd, addr);
+		p4d = p4d_offset(pgd, addr);
+		if (unlikely(p4d_none(*p4d)))
+			continue;
+		pud = pud_offset(p4d, addr);
+
 		do {
 			pud_next = pud_addr_end(addr, pgd_next);
 			if (pud_none(*pud) || pud_bad(*pud))
@@ -1411,9 +1416,9 @@ static int clean_invalid_resource_walk(const void __user *addr,
 		return -EFAULT;
 	}
 
-	down_read(&current->mm->mmap_sem);
+	mmap_read_lock(current->mm);
 	err = clean_invalid_mem_walk((unsigned long) addr, size, cache_op);
-	up_read(&current->mm->mmap_sem);
+	mmap_write_unlock(current->mm);
 
 	if (err)
 		resource->res_stats[stat_failure]++;
@@ -1971,7 +1976,7 @@ static int vc_sm_ioctl_lock(struct sm_priv_data_t *private,
 						== VMCS_SM_CACHE_HOST) {
 					ioparam->addr = (unsigned long)
 					/* TODO - make cached work */
-					    ioremap_nocache(phys_addr,
+					    ioremap(phys_addr,
 							   resource->res_size);
 
 					pr_debug("[%s]: mapping kernel - guid %x, hdl %x - cached mapping %u\n",
@@ -1979,7 +1984,7 @@ static int vc_sm_ioctl_lock(struct sm_priv_data_t *private,
 						lock.res_handle, ioparam->addr);
 				} else {
 					ioparam->addr = (unsigned long)
-					    ioremap_nocache(phys_addr,
+					    ioremap(phys_addr,
 							    resource->res_size);
 
 					pr_debug("[%s]: mapping kernel- guid %x, hdl %x - non cached mapping %u\n",
@@ -2056,7 +2061,7 @@ static int vc_sm_ioctl_unlock(struct sm_priv_data_t *private,
 			phys_addr += (dma_addr_t)mm_vc_mem_phys_addr;
 
 			/* L1 cache flush */
-			down_read(&current->mm->mmap_sem);
+			mmap_read_lock(current->mm);
 			list_for_each_entry(map, &resource->map_list,
 					    resource_map_list) {
 				if (map->vma) {
@@ -2069,7 +2074,7 @@ static int vc_sm_ioctl_unlock(struct sm_priv_data_t *private,
 						goto error;
 				}
 			}
-			up_read(&current->mm->mmap_sem);
+			mmap_write_unlock(current->mm);
 
 			/* L2 cache flush */
 			outer_clean_range(phys_addr,
@@ -2079,7 +2084,7 @@ static int vc_sm_ioctl_unlock(struct sm_priv_data_t *private,
 
 		/* We need to zap all the vmas associated with this resource */
 		if (resource->lock_count == 1) {
-			down_read(&current->mm->mmap_sem);
+			mmap_read_lock(current->mm);
 			list_for_each_entry(map, &resource->map_list,
 					    resource_map_list) {
 				if (map->vma) {
@@ -2089,7 +2094,7 @@ static int vc_sm_ioctl_unlock(struct sm_priv_data_t *private,
 						     map->vma->vm_start);
 				}
 			}
-			up_read(&current->mm->mmap_sem);
+			mmap_write_unlock(current->mm);
 		}
 	}
 	/* Kernel allocated resources. */
@@ -3176,7 +3181,7 @@ out:
 static void vc_sm_connected_init(void)
 {
 	int ret;
-	VCHI_INSTANCE_T vchi_instance;
+	struct vchi_instance_handle *vchi_instance;
 
 	pr_info("[%s]: start\n", __func__);
 

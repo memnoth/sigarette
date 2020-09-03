@@ -2,9 +2,6 @@
 #ifndef __ASM_S390_PCI_H
 #define __ASM_S390_PCI_H
 
-/* must be set before including pci_clp.h */
-#define PCI_BAR_COUNT	6
-
 #include <linux/pci.h>
 #include <linux/mutex.h>
 #include <linux/iommu.h>
@@ -109,6 +106,7 @@ struct zpci_bus {
 	struct zpci_dev		*function[ZPCI_FUNCTIONS_PER_BUS];
 	struct list_head	resources;
 	struct list_head	bus_next;
+	struct resource		bus_resource;
 	int			pchid;
 	int			domain_nr;
 	bool			multifunction;
@@ -166,7 +164,7 @@ struct zpci_dev {
 
 	char res_name[16];
 	bool mio_capable;
-	struct zpci_bar_struct bars[PCI_BAR_COUNT];
+	struct zpci_bar_struct bars[PCI_STD_NUM_BARS];
 
 	u64		start_dma;	/* Start of available DMA addresses */
 	u64		end_dma;	/* End of available DMA addresses */

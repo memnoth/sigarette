@@ -32,6 +32,7 @@ pin_page_for_write(const void __user *_addr, pte_t **ptep, spinlock_t **ptlp)
 {
 	unsigned long addr = (unsigned long)_addr;
 	pgd_t *pgd;
+	p4d_t *p4d;
 	pmd_t *pmd;
 	pte_t *pte;
 	pud_t *pud;
@@ -41,12 +42,16 @@ pin_page_for_write(const void __user *_addr, pte_t **ptep, spinlock_t **ptlp)
 	if (unlikely(pgd_none(*pgd) || pgd_bad(*pgd)))
 		return 0;
 
-	pud = pud_offset(pgd, addr);
+	p4d = p4d_offset(pgd, addr);
+	if (unlikely(p4d_none(*p4d) || p4d_bad(*p4d)))
+		return 0;
+
+	pud = pud_offset(p4d, addr);
 	if (unlikely(pud_none(*pud) || pud_bad(*pud)))
 		return 0;
 
 	pmd = pmd_offset(pud, addr);
-	if (unlikely(pmd_none(*pmd)))
+	if (unlikely(pmd_none(*pmd) || pmd_bad(*pmd)))
 		return 0;
 
 	/*
@@ -94,6 +99,7 @@ pin_page_for_read(const void __user *_addr, pte_t **ptep, spinlock_t **ptlp)
 {
 	unsigned long addr = (unsigned long)_addr;
 	pgd_t *pgd;
+	p4d_t *p4d;
 	pmd_t *pmd;
 	pte_t *pte;
 	pud_t *pud;
@@ -101,14 +107,15 @@ pin_page_for_read(const void __user *_addr, pte_t **ptep, spinlock_t **ptlp)
 
 	pgd = pgd_offset(current->mm, addr);
 	if (unlikely(pgd_none(*pgd) || pgd_bad(*pgd)))
-	{
 		return 0;
-	}
-	pud = pud_offset(pgd, addr);
+
+	p4d = p4d_offset(pgd, addr);
+	if (unlikely(p4d_none(*p4d) || p4d_bad(*p4d)))
+		return 0;
+
+	pud = pud_offset(p4d, addr);
 	if (unlikely(pud_none(*pud) || pud_bad(*pud)))
-	{
 		return 0;
-	}
 
 	pmd = pmd_offset(pud, addr);
 	if (unlikely(pmd_none(*pmd) || pmd_bad(*pmd)))
@@ -141,7 +148,7 @@ __copy_to_user_memcpy(void __user *to, const void *from, unsigned long n)
 	atomic = faulthandler_disabled();
 
 	if (!atomic)
-		down_read(&current->mm->mmap_sem);
+		mmap_read_lock(current->mm);
 	while (n) {
 		pte_t *pte;
 		spinlock_t *ptl;
@@ -149,11 +156,11 @@ __copy_to_user_memcpy(void __user *to, const void *from, unsigned long n)
 
 		while (!pin_page_for_write(to, &pte, &ptl)) {
 			if (!atomic)
-				up_read(&current->mm->mmap_sem);
+				mmap_read_unlock(current->mm);
 			if (__put_user(0, (char __user *)to))
 				goto out;
 			if (!atomic)
-				down_read(&current->mm->mmap_sem);
+				mmap_read_lock(current->mm);
 		}
 
 		tocopy = (~(unsigned long)to & ~PAGE_MASK) + 1;
@@ -173,7 +180,7 @@ __copy_to_user_memcpy(void __user *to, const void *from, unsigned long n)
 			spin_unlock(ptl);
 	}
 	if (!atomic)
-		up_read(&current->mm->mmap_sem);
+		mmap_read_unlock(current->mm);
 
 out:
 	return n;
@@ -194,7 +201,7 @@ __copy_from_user_memcpy(void *to, const void __user *from, unsigned long n)
 	atomic = in_atomic();
 
 	if (!atomic)
-		down_read(&current->mm->mmap_sem);
+		mmap_read_lock(current->mm);
 	while (n) {
 		pte_t *pte;
 		spinlock_t *ptl;
@@ -203,11 +210,11 @@ __copy_from_user_memcpy(void *to, const void __user *from, unsigned long n)
 		while (!pin_page_for_read(from, &pte, &ptl)) {
 			char temp;
 			if (!atomic)
-				up_read(&current->mm->mmap_sem);
+				mmap_write_unlock(current->mm);
 			if (__get_user(temp, (char __user *)from))
 				goto out;
 			if (!atomic)
-				down_read(&current->mm->mmap_sem);
+				mmap_read_lock(current->mm);
 		}
 
 		tocopy = (~(unsigned long)from & ~PAGE_MASK) + 1;
@@ -224,7 +231,7 @@ __copy_from_user_memcpy(void *to, const void __user *from, unsigned long n)
 		pte_unmap_unlock(pte, ptl);
 	}
 	if (!atomic)
-		up_read(&current->mm->mmap_sem);
+		mmap_write_unlock(current->mm);
 
 out:
 	return n;
@@ -287,17 +294,17 @@ __clear_user_memset(void __user *addr, unsigned long n)
 		return 0;
 	}
 
-	down_read(&current->mm->mmap_sem);
+	mmap_read_lock(current->mm);
 	while (n) {
 		pte_t *pte;
 		spinlock_t *ptl;
 		int tocopy;
 
 		while (!pin_page_for_write(addr, &pte, &ptl)) {
-			up_read(&current->mm->mmap_sem);
+			mmap_read_unlock(current->mm);
 			if (__put_user(0, (char __user *)addr))
 				goto out;
-			down_read(&current->mm->mmap_sem);
+			mmap_read_lock(current->mm);
 		}
 
 		tocopy = (~(unsigned long)addr & ~PAGE_MASK) + 1;
@@ -315,7 +322,7 @@ __clear_user_memset(void __user *addr, unsigned long n)
 		else
 			spin_unlock(ptl);
 	}
-	up_read(&current->mm->mmap_sem);
+	mmap_read_unlock(current->mm);
 
 out:
 	return n;

@@ -258,38 +258,20 @@ static int vc_mem_debugfs_init(
 		return -EFAULT;
 	}
 
-	if (!debugfs_create_x32("vc_mem_phys_addr",
+	debugfs_create_x32("vc_mem_phys_addr",
 				0444,
 				vc_mem_debugfs_entry,
-				(u32 *)&mm_vc_mem_phys_addr)) {
-		dev_warn(dev, "%s:could not create vc_mem_phys entry\n",
-			 __func__);
-		goto fail;
-	}
-
-	if (!debugfs_create_x32("vc_mem_size",
+				(u32 *)&mm_vc_mem_phys_addr);
+	debugfs_create_x32("vc_mem_size",
 				0444,
 				vc_mem_debugfs_entry,
-				(u32 *)&mm_vc_mem_size)) {
-		dev_warn(dev, "%s:could not create vc_mem_size entry\n",
-			 __func__);
-		goto fail;
-	}
-
-	if (!debugfs_create_x32("vc_mem_base",
+				(u32 *)&mm_vc_mem_size);
+	debugfs_create_x32("vc_mem_base",
 				0444,
 				vc_mem_debugfs_entry,
-				(u32 *)&mm_vc_mem_base)) {
-		dev_warn(dev, "%s:could not create vc_mem_base entry\n",
-			 __func__);
-		goto fail;
-	}
+				(u32 *)&mm_vc_mem_base);
 
 	return 0;
-
-fail:
-	vc_mem_debugfs_deinit();
-	return -EFAULT;
 }
 
 #endif /* CONFIG_DEBUG_FS */

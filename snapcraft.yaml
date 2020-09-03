@@ -1,10 +1,10 @@
-name: pi2-kernel
+name: pc-kernel
 version: null
 version-script: |
     . debian/debian.env
     dpkg-parsechangelog -l $DEBIAN/changelog -S version
-summary: The Canonical raspi Linux kernel
-description: The Canonical raspi Linux kernel
+summary: The Ubuntu generic Linux kernel
+description: This Ubuntu generic Linux kernel
 grade: stable
 confinement: strict
 type: kernel
@@ -14,17 +14,14 @@ parts:
     plugin: kernel
     source: .
     source-type: git
-    kconfigflavour: raspi
+    kconfigflavour: generic
     kconfigs:
       - CONFIG_DEBUG_INFO=n
-    kernel-image-target: zImage
-    kernel-with-firmware: false
     override-build: |
       cp debian/scripts/retpoline-extract-one \
         $SNAPCRAFT_PART_BUILD/scripts/ubuntu-retpoline-extract-one
       snapcraftctl build
-      tar -C $SNAPCRAFT_PART_INSTALL/dtbs -f $SNAPCRAFT_PART_INSTALL/dtbs/overlays.tgz -czv overlays
-      rm -rf $SNAPCRAFT_PART_INSTALL/dtbs/overlays
+    kernel-with-firmware: false
   firmware:
     plugin: nil
     stage-packages:
@@ -37,4 +34,3 @@ parts:
     build-packages:
       - cpio
       - libssl-dev
-      - dpkg-dev

@@ -4,6 +4,7 @@
  * Author:	Daniel Matuschek, Stuart MacLean <stuart@hifiberry.com>
  *		Copyright 2014-2015
  *		based on code by Florian Meier <florian.meier@koalo.de>
+ *		Headphone added by Joerg Schambacher, joerg@i2audio.com
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -24,6 +25,7 @@
 #include <linux/of.h>
 #include <linux/slab.h>
 #include <linux/delay.h>
+#include <linux/i2c.h>
 
 #include <sound/core.h>
 #include <sound/pcm.h>
@@ -145,7 +147,7 @@ static void snd_rpi_hifiberry_dacplus_set_sclk(struct snd_soc_component *compone
 
 static int snd_rpi_hifiberry_dacplus_init(struct snd_soc_pcm_runtime *rtd)
 {
-	struct snd_soc_component *component = rtd->codec_dai->component;
+	struct snd_soc_component *component = asoc_rtd_to_codec(rtd, 0)->component;
 	struct pcm512x_priv *priv;
 
 	if (slave)
@@ -177,8 +179,7 @@ static int snd_rpi_hifiberry_dacplus_init(struct snd_soc_pcm_runtime *rtd)
 	else
 		snd_soc_component_update_bits(component, PCM512x_GPIO_CONTROL_1, 0x08, 0x08);
 
-	if (digital_gain_0db_limit)
-	{
+	if (digital_gain_0db_limit) {
 		int ret;
 		struct snd_soc_card *card = rtd->card;
 
@@ -194,7 +195,7 @@ static int snd_rpi_hifiberry_dacplus_update_rate_den(
 	struct snd_pcm_substream *substream, struct snd_pcm_hw_params *params)
 {
 	struct snd_soc_pcm_runtime *rtd = substream->private_data;
-	struct snd_soc_component *component = rtd->codec_dai->component;
+	struct snd_soc_component *component = asoc_rtd_to_codec(rtd, 0)->component;
 	struct pcm512x_priv *pcm512x = snd_soc_component_get_drvdata(component);
 	struct snd_ratnum *rats_no_pll;
 	unsigned int num = 0, den = 0;
@@ -229,7 +230,7 @@ static int snd_rpi_hifiberry_dacplus_hw_params(
 	int width = 32;
 
 	if (snd_rpi_hifiberry_is_dacpro) {
-		struct snd_soc_component *component = rtd->codec_dai->component;
+		struct snd_soc_component *component = asoc_rtd_to_codec(rtd, 0)->component;
 
 		width = snd_pcm_format_physical_width(params_format(params));
 
@@ -240,10 +241,10 @@ static int snd_rpi_hifiberry_dacplus_hw_params(
 			substream, params);
 	}
 
-	ret = snd_soc_dai_set_bclk_ratio(rtd->cpu_dai, channels * width);
+	ret = snd_soc_dai_set_bclk_ratio(asoc_rtd_to_cpu(rtd, 0), channels * width);
 	if (ret)
 		return ret;
-	ret = snd_soc_dai_set_bclk_ratio(rtd->codec_dai, channels * width);
+	ret = snd_soc_dai_set_bclk_ratio(asoc_rtd_to_codec(rtd, 0), channels * width);
 	return ret;
 }
 
@@ -251,7 +252,7 @@ static int snd_rpi_hifiberry_dacplus_startup(
 	struct snd_pcm_substream *substream)
 {
 	struct snd_soc_pcm_runtime *rtd = substream->private_data;
-	struct snd_soc_component *component = rtd->codec_dai->component;
+	struct snd_soc_component *component = asoc_rtd_to_codec(rtd, 0)->component;
 
 	if (leds_off)
 		return 0;
@@ -263,7 +264,7 @@ static void snd_rpi_hifiberry_dacplus_shutdown(
 	struct snd_pcm_substream *substream)
 {
 	struct snd_soc_pcm_runtime *rtd = substream->private_data;
-	struct snd_soc_component *component = rtd->codec_dai->component;
+	struct snd_soc_component *component = asoc_rtd_to_codec(rtd, 0)->component;
 
 	snd_soc_component_update_bits(component, PCM512x_GPIO_CONTROL_1, 0x08, 0x00);
 }
@@ -292,6 +293,15 @@ static struct snd_soc_dai_link snd_rpi_hifiberry_dacplus_dai[] = {
 },
 };
 
+/* aux device for optional headphone amp */
+static struct snd_soc_aux_dev hifiberry_dacplus_aux_devs[] = {
+	{
+		.dlc = {
+			.name = "tpa6130a2.1-0060",
+		},
+	},
+};
+
 /* audio machine driver */
 static struct snd_soc_card snd_rpi_hifiberry_dacplus = {
 	.name         = "snd_rpi_hifiberry_dacplus",
@@ -301,9 +311,63 @@ static struct snd_soc_card snd_rpi_hifiberry_dacplus = {
 	.num_links    = ARRAY_SIZE(snd_rpi_hifiberry_dacplus_dai),
 };
 
+static int hb_hp_detect(void)
+{
+	struct i2c_adapter *adap = i2c_get_adapter(1);
+	int ret;
+
+	struct i2c_client tpa_i2c_client = {
+		.addr = 0x60,
+		.adapter = adap,
+	};
+
+	ret = i2c_smbus_read_byte(&tpa_i2c_client) >= 0;
+	i2c_put_adapter(adap);
+	return ret;
+};
+
+static struct property tpa_enable_prop = {
+	       .name = "status",
+	       .length = 4 + 1, /* length 'okay' + 1 */
+	       .value = "okay",
+	};
+
 static int snd_rpi_hifiberry_dacplus_probe(struct platform_device *pdev)
 {
 	int ret = 0;
+	struct snd_soc_card *card = &snd_rpi_hifiberry_dacplus;
+	int len;
+	struct device_node *tpa_node;
+	struct property *tpa_prop;
+	struct of_changeset ocs;
+
+	/* probe for head phone amp */
+	if (hb_hp_detect()) {
+		card->aux_dev = hifiberry_dacplus_aux_devs;
+		card->num_aux_devs =
+				ARRAY_SIZE(hifiberry_dacplus_aux_devs);
+		tpa_node = of_find_compatible_node(NULL, NULL, "ti,tpa6130a2");
+		tpa_prop = of_find_property(tpa_node, "status", &len);
+
+		if (strcmp((char *)tpa_prop->value, "okay")) {
+			/* and activate headphone using change_sets */
+			dev_info(&pdev->dev, "activating headphone amplifier");
+			of_changeset_init(&ocs);
+			ret = of_changeset_update_property(&ocs, tpa_node,
+							&tpa_enable_prop);
+			if (ret) {
+				dev_err(&pdev->dev,
+				"cannot activate headphone amplifier\n");
+				return -ENODEV;
+			}
+			ret = of_changeset_apply(&ocs);
+			if (ret) {
+				dev_err(&pdev->dev,
+				"cannot activate headphone amplifier\n");
+				return -ENODEV;
+			}
+		}
+	}
 
 	snd_rpi_hifiberry_dacplus.dev = &pdev->dev;
 	if (pdev->dev.of_node) {

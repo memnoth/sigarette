@@ -68,7 +68,7 @@
 #define BCM2835_SPI_FIFO_SIZE		64
 #define BCM2835_SPI_FIFO_SIZE_3_4	48
 #define BCM2835_SPI_DMA_MIN_LENGTH	96
-#define BCM2835_SPI_NUM_CS		3   /* raise as necessary */
+#define BCM2835_SPI_NUM_CS		4   /* raise as necessary */
 #define BCM2835_SPI_MODE_BITS	(SPI_CPOL | SPI_CPHA | SPI_CS_HIGH \
 				| SPI_NO_CS | SPI_3WIRE)
 
@@ -191,12 +191,12 @@ static void bcm2835_debugfs_remove(struct bcm2835_spi *bs)
 }
 #endif /* CONFIG_DEBUG_FS */
 
-static inline u32 bcm2835_rd(struct bcm2835_spi *bs, unsigned reg)
+static inline u32 bcm2835_rd(struct bcm2835_spi *bs, unsigned int reg)
 {
 	return readl(bs->regs + reg);
 }
 
-static inline void bcm2835_wr(struct bcm2835_spi *bs, unsigned reg, u32 val)
+static inline void bcm2835_wr(struct bcm2835_spi *bs, unsigned int reg, u32 val)
 {
 	writel(val, bs->regs + reg);
 }
@@ -892,8 +892,8 @@ static void bcm2835_dma_release(struct spi_controller *ctlr,
 	}
 }
 
-static void bcm2835_dma_init(struct spi_controller *ctlr, struct device *dev,
-			     struct bcm2835_spi *bs)
+static int bcm2835_dma_init(struct spi_controller *ctlr, struct device *dev,
+			    struct bcm2835_spi *bs)
 {
 	struct dma_slave_config slave_config;
 	const __be32 *addr;
@@ -904,19 +904,24 @@ static void bcm2835_dma_init(struct spi_controller *ctlr, struct device *dev,
 	addr = of_get_address(ctlr->dev.of_node, 0, NULL, NULL);
 	if (!addr) {
 		dev_err(dev, "could not get DMA-register address - not using dma mode\n");
-		goto err;
+		/* Fall back to interrupt mode */
+		return 0;
 	}
 	dma_reg_base = be32_to_cpup(addr);
 
 	/* get tx/rx dma */
-	ctlr->dma_tx = dma_request_slave_channel(dev, "tx");
-	if (!ctlr->dma_tx) {
+	ctlr->dma_tx = dma_request_chan(dev, "tx");
+	if (IS_ERR(ctlr->dma_tx)) {
 		dev_err(dev, "no tx-dma configuration found - not using dma mode\n");
+		ret = PTR_ERR(ctlr->dma_tx);
+		ctlr->dma_tx = NULL;
 		goto err;
 	}
-	ctlr->dma_rx = dma_request_slave_channel(dev, "rx");
-	if (!ctlr->dma_rx) {
+	ctlr->dma_rx = dma_request_chan(dev, "rx");
+	if (IS_ERR(ctlr->dma_rx)) {
 		dev_err(dev, "no rx-dma configuration found - not using dma mode\n");
+		ret = PTR_ERR(ctlr->dma_rx);
+		ctlr->dma_rx = NULL;
 		goto err_release;
 	}
 
@@ -939,6 +944,7 @@ static void bcm2835_dma_init(struct spi_controller *ctlr, struct device *dev,
 	if (dma_mapping_error(ctlr->dma_tx->device->dev, bs->fill_tx_addr)) {
 		dev_err(dev, "cannot map zero page - not using DMA mode\n");
 		bs->fill_tx_addr = 0;
+		ret = -ENOMEM;
 		goto err_release;
 	}
 
@@ -948,6 +954,7 @@ static void bcm2835_dma_init(struct spi_controller *ctlr, struct device *dev,
 						     DMA_MEM_TO_DEV, 0);
 	if (!bs->fill_tx_desc) {
 		dev_err(dev, "cannot prepare fill_tx_desc - not using DMA mode\n");
+		ret = -ENOMEM;
 		goto err_release;
 	}
 
@@ -978,6 +985,7 @@ static void bcm2835_dma_init(struct spi_controller *ctlr, struct device *dev,
 	if (dma_mapping_error(ctlr->dma_rx->device->dev, bs->clear_rx_addr)) {
 		dev_err(dev, "cannot map clear_rx_cs - not using DMA mode\n");
 		bs->clear_rx_addr = 0;
+		ret = -ENOMEM;
 		goto err_release;
 	}
 
@@ -988,6 +996,7 @@ static void bcm2835_dma_init(struct spi_controller *ctlr, struct device *dev,
 					   DMA_MEM_TO_DEV, 0);
 		if (!bs->clear_rx_desc[i]) {
 			dev_err(dev, "cannot prepare clear_rx_desc - not using DMA mode\n");
+			ret = -ENOMEM;
 			goto err_release;
 		}
 
@@ -1001,7 +1010,7 @@ static void bcm2835_dma_init(struct spi_controller *ctlr, struct device *dev,
 	/* all went well, so set can_dma */
 	ctlr->can_dma = bcm2835_spi_can_dma;
 
-	return;
+	return 0;
 
 err_config:
 	dev_err(dev, "issue configuring dma: %d - not using DMA mode\n",
@@ -1009,7 +1018,14 @@ err_config:
 err_release:
 	bcm2835_dma_release(ctlr, bs);
 err:
-	return;
+	/*
+	 * Only report error for deferred probing, otherwise fall back to
+	 * interrupt mode
+	 */
+	if (ret != -EPROBE_DEFER)
+		ret = 0;
+
+	return ret;
 }
 
 static int bcm2835_spi_transfer_one_poll(struct spi_controller *ctlr,
@@ -1173,63 +1189,17 @@ static void bcm2835_spi_handle_err(struct spi_controller *ctlr,
 	bcm2835_spi_reset_hw(ctlr);
 }
 
-static void bcm2835_spi_set_cs(struct spi_device *spi, bool gpio_level)
+static int chip_match_name(struct gpio_chip *chip, void *data)
 {
-	/*
-	 * we can assume that we are "native" as per spi_set_cs
-	 *   calling us ONLY when cs_gpio is not set
-	 * we can also assume that we are CS < 3 as per bcm2835_spi_setup
-	 *   we would not get called because of error handling there.
-	 * the level passed is the electrical level not enabled/disabled
-	 *   so it has to get translated back to enable/disable
-	 *   see spi_set_cs in spi.c for the implementation
-	 */
-
-	struct spi_master *master = spi->master;
-	struct bcm2835_spi *bs = spi_master_get_devdata(master);
-	u32 cs = bcm2835_rd(bs, BCM2835_SPI_CS);
-	bool enable;
-
-	/* calculate the enable flag from the passed gpio_level */
-	enable = (spi->mode & SPI_CS_HIGH) ? gpio_level : !gpio_level;
-
-	/* set flags for "reverse" polarity in the registers */
-	if (spi->mode & SPI_CS_HIGH) {
-		/* set the correct CS-bits */
-		cs |= BCM2835_SPI_CS_CSPOL;
-		cs |= BCM2835_SPI_CS_CSPOL0 << spi->chip_select;
-	} else {
-		/* clean the CS-bits */
-		cs &= ~BCM2835_SPI_CS_CSPOL;
-		cs &= ~(BCM2835_SPI_CS_CSPOL0 << spi->chip_select);
-	}
-
-	/* select the correct chip_select depending on disabled/enabled */
-	if (enable) {
-		/* set cs correctly */
-		if (spi->mode & SPI_NO_CS) {
-			/* use the "undefined" chip-select */
-			cs |= BCM2835_SPI_CS_CS_10 | BCM2835_SPI_CS_CS_01;
-		} else {
-			/* set the chip select */
-			cs &= ~(BCM2835_SPI_CS_CS_10 | BCM2835_SPI_CS_CS_01);
-			cs |= spi->chip_select;
-		}
-	} else {
-		/* disable CSPOL which puts HW-CS into deselected state */
-		cs &= ~BCM2835_SPI_CS_CSPOL;
-		/* use the "undefined" chip-select as precaution */
-		cs |= BCM2835_SPI_CS_CS_10 | BCM2835_SPI_CS_CS_01;
-	}
-
-	/* finally set the calculated flags in SPI_CS */
-	bcm2835_wr(bs, BCM2835_SPI_CS, cs);
+	return !strcmp(chip->label, data);
 }
 
 static int bcm2835_spi_setup(struct spi_device *spi)
 {
 	struct spi_controller *ctlr = spi->controller;
 	struct bcm2835_spi *bs = spi_controller_get_devdata(ctlr);
+	struct gpio_chip *chip;
+	enum gpio_lookup_flags lflags;
 	u32 cs;
 
 	/*
@@ -1281,6 +1251,43 @@ static int bcm2835_spi_setup(struct spi_device *spi)
 		return -EINVAL;
 	}
 
+	/*
+	 * Translate native CS to GPIO
+	 *
+	 * FIXME: poking around in the gpiolib internals like this is
+	 * not very good practice. Find a way to locate the real problem
+	 * and fix it. Why is the GPIO descriptor in spi->cs_gpiod
+	 * sometimes not assigned correctly? Erroneous device trees?
+	 */
+
+	/* get the gpio chip for the base */
+	chip = gpiochip_find("pinctrl-bcm2835", chip_match_name);
+	if (!chip)
+		return 0;
+
+	/*
+	 * Retrieve the corresponding GPIO line used for CS.
+	 * The inversion semantics will be handled by the GPIO core
+	 * code, so we pass GPIOD_OUT_LOW for "unasserted" and
+	 * the correct flag for inversion semantics. The SPI_CS_HIGH
+	 * on spi->mode cannot be checked for polarity in this case
+	 * as the flag use_gpio_descriptors enforces SPI_CS_HIGH.
+	 */
+	if (of_property_read_bool(spi->dev.of_node, "spi-cs-high"))
+		lflags = GPIO_ACTIVE_HIGH;
+	else
+		lflags = GPIO_ACTIVE_LOW;
+	spi->cs_gpiod = gpiochip_request_own_desc(chip, 8 - spi->chip_select,
+						  DRV_NAME,
+						  lflags,
+						  GPIOD_OUT_LOW);
+	if (IS_ERR(spi->cs_gpiod))
+		return PTR_ERR(spi->cs_gpiod);
+
+	/* and set up the "mode" and level */
+	dev_info(&spi->dev, "setting up native-CS%i to use GPIO\n",
+		 spi->chip_select);
+
 	return 0;
 }
 
@@ -1302,7 +1309,6 @@ static int bcm2835_spi_probe(struct platform_device *pdev)
 	ctlr->bits_per_word_mask = SPI_BPW_MASK(8);
 	ctlr->num_chipselect = BCM2835_SPI_NUM_CS;
 	ctlr->setup = bcm2835_spi_setup;
-	ctlr->set_cs = bcm2835_spi_set_cs;
 	ctlr->transfer_one = bcm2835_spi_transfer_one;
 	ctlr->handle_err = bcm2835_spi_handle_err;
 	ctlr->prepare_message = bcm2835_spi_prepare_message;
@@ -1319,7 +1325,10 @@ static int bcm2835_spi_probe(struct platform_device *pdev)
 	bs->clk = devm_clk_get(&pdev->dev, NULL);
 	if (IS_ERR(bs->clk)) {
 		err = PTR_ERR(bs->clk);
-		dev_err(&pdev->dev, "could not get clk: %d\n", err);
+		if (err == -EPROBE_DEFER)
+			dev_dbg(&pdev->dev, "could not get clk: %d\n", err);
+		else
+			dev_err(&pdev->dev, "could not get clk: %d\n", err);
 		goto out_controller_put;
 	}
 
@@ -1331,7 +1340,9 @@ static int bcm2835_spi_probe(struct platform_device *pdev)
 
 	clk_prepare_enable(bs->clk);
 
-	bcm2835_dma_init(ctlr, &pdev->dev, bs);
+	err = bcm2835_dma_init(ctlr, &pdev->dev, bs);
+	if (err)
+		goto out_clk_disable;
 
 	/* initialise the hardware with the default polarities */
 	bcm2835_wr(bs, BCM2835_SPI_CS,
@@ -1342,20 +1353,22 @@ static int bcm2835_spi_probe(struct platform_device *pdev)
 			       dev_name(&pdev->dev), ctlr);
 	if (err) {
 		dev_err(&pdev->dev, "could not request IRQ: %d\n", err);
-		goto out_clk_disable;
+		goto out_dma_release;
 	}
 
 	err = spi_register_controller(ctlr);
 	if (err) {
 		dev_err(&pdev->dev, "could not register SPI controller: %d\n",
 			err);
-		goto out_clk_disable;
+		goto out_dma_release;
 	}
 
 	bcm2835_debugfs_create(bs, dev_name(&pdev->dev));
 
 	return 0;
 
+out_dma_release:
+	bcm2835_dma_release(ctlr, bs);
 out_clk_disable:
 	clk_disable_unprepare(bs->clk);
 out_controller_put:
@@ -1372,15 +1385,24 @@ static int bcm2835_spi_remove(struct platform_device *pdev)
 
 	spi_unregister_controller(ctlr);
 
+	bcm2835_dma_release(ctlr, bs);
+
 	/* Clear FIFOs, and disable the HW block */
 	bcm2835_wr(bs, BCM2835_SPI_CS,
 		   BCM2835_SPI_CS_CLEAR_RX | BCM2835_SPI_CS_CLEAR_TX);
 
 	clk_disable_unprepare(bs->clk);
 
-	bcm2835_dma_release(ctlr, bs);
-
 	return 0;
+}
+
+static void bcm2835_spi_shutdown(struct platform_device *pdev)
+{
+	int ret;
+
+	ret = bcm2835_spi_remove(pdev);
+	if (ret)
+		dev_err(&pdev->dev, "failed to shutdown\n");
 }
 
 static const struct of_device_id bcm2835_spi_match[] = {
@@ -1396,6 +1418,7 @@ static struct platform_driver bcm2835_spi_driver = {
 	},
 	.probe		= bcm2835_spi_probe,
 	.remove		= bcm2835_spi_remove,
+	.shutdown	= bcm2835_spi_shutdown,
 };
 module_platform_driver(bcm2835_spi_driver);
 

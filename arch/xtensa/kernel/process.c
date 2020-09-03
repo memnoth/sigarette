@@ -37,7 +37,6 @@
 #include <linux/slab.h>
 #include <linux/rcupdate.h>
 
-#include <asm/pgtable.h>
 #include <linux/uaccess.h>
 #include <asm/io.h>
 #include <asm/processor.h>
@@ -264,6 +263,8 @@ int copy_thread_tls(unsigned long clone_flags, unsigned long usp_thread_fn,
 			memcpy(&childregs->areg[XCHAL_NUM_AREGS - len/4],
 			       &regs->areg[XCHAL_NUM_AREGS - len/4], len);
 		}
+
+		childregs->syscall = regs->syscall;
 
 		if (clone_flags & CLONE_SETTLS)
 			childregs->threadptr = tls;

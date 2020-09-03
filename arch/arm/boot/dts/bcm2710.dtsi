@@ -5,7 +5,11 @@
 	compatible = "brcm,bcm2837", "brcm,bcm2836";
 
 	arm-pmu {
-		compatible = "arm,cortex-a53-pmu", "arm,cortex-a7-pmu";
+#ifdef RPI364
+		compatible = "arm,armv8-pmuv3", "arm,cortex-a7-pmu";
+#else
+		compatible = "arm,cortex-a7-pmu";
+#endif
 	};
 
 	soc {

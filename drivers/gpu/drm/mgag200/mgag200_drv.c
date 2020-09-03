@@ -6,13 +6,13 @@
  *          Dave Airlie
  */
 
-#include <linux/module.h>
 #include <linux/console.h>
+#include <linux/module.h>
+#include <linux/pci.h>
 
 #include <drm/drm_drv.h>
 #include <drm/drm_file.h>
 #include <drm/drm_ioctl.h>
-#include <drm/drm_pci.h>
 #include <drm/drm_pciids.h>
 
 #include "mgag200_drv.h"
@@ -22,8 +22,8 @@
  * which then performs further device association and calls our graphics init
  * functions
  */
-int mgag200_modeset = -1;
 
+int mgag200_modeset = -1;
 MODULE_PARM_DESC(modeset, "Disable/Enable modesetting");
 module_param_named(modeset, mgag200_modeset, int, 0400);
 
@@ -47,56 +47,58 @@ MODULE_DEVICE_TABLE(pci, pciidlist);
 
 static int mga_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 {
-	drm_fb_helper_remove_conflicting_pci_framebuffers(pdev, 0, "mgag200drmfb");
+	struct drm_device *dev;
+	int ret;
 
-	return drm_get_pci_dev(pdev, ent, &driver);
+	drm_fb_helper_remove_conflicting_pci_framebuffers(pdev, "mgag200drmfb");
+
+	ret = pci_enable_device(pdev);
+	if (ret)
+		return ret;
+
+	dev = drm_dev_alloc(&driver, &pdev->dev);
+	if (IS_ERR(dev)) {
+		ret = PTR_ERR(dev);
+		goto err_pci_disable_device;
+	}
+
+	dev->pdev = pdev;
+	pci_set_drvdata(pdev, dev);
+
+	ret = mgag200_driver_load(dev, ent->driver_data);
+	if (ret)
+		goto err_drm_dev_put;
+
+	ret = drm_dev_register(dev, ent->driver_data);
+	if (ret)
+		goto err_mgag200_driver_unload;
+
+	drm_fbdev_generic_setup(dev, 0);
+
+	return 0;
+
+err_mgag200_driver_unload:
+	mgag200_driver_unload(dev);
+err_drm_dev_put:
+	drm_dev_put(dev);
+err_pci_disable_device:
+	pci_disable_device(pdev);
+	return ret;
 }
 
 static void mga_pci_remove(struct pci_dev *pdev)
 {
 	struct drm_device *dev = pci_get_drvdata(pdev);
 
-	drm_put_dev(dev);
+	drm_dev_unregister(dev);
+	mgag200_driver_unload(dev);
+	drm_dev_put(dev);
 }
 
-static const struct file_operations mgag200_driver_fops = {
-	.owner = THIS_MODULE,
-	DRM_VRAM_MM_FILE_OPERATIONS
-};
-
-static bool mgag200_pin_bo_at_0(const struct mga_device *mdev)
-{
-	return mdev->flags & MGAG200_FLAG_HW_BUG_NO_STARTADD;
-}
-
-int mgag200_driver_dumb_create(struct drm_file *file,
-			       struct drm_device *dev,
-			       struct drm_mode_create_dumb *args)
-{
-	struct mga_device *mdev = dev->dev_private;
-	unsigned long pg_align;
-
-	if (WARN_ONCE(!dev->vram_mm, "VRAM MM not initialized"))
-		return -EINVAL;
-
-	pg_align = 0ul;
-
-	/*
-	 * Aligning scanout buffers to the size of the video ram forces
-	 * placement at offset 0. Works around a bug where HW does not
-	 * respect 'startadd' field.
-	 */
-	if (mgag200_pin_bo_at_0(mdev))
-		pg_align = PFN_UP(mdev->mc.vram_size);
-
-	return drm_gem_vram_fill_create_dumb(file, dev, &dev->vram_mm->bdev,
-					     pg_align, false, args);
-}
+DEFINE_DRM_GEM_FOPS(mgag200_driver_fops);
 
 static struct drm_driver driver = {
-	.driver_features = DRIVER_GEM | DRIVER_MODESET,
-	.load = mgag200_driver_load,
-	.unload = mgag200_driver_unload,
+	.driver_features = DRIVER_ATOMIC | DRIVER_GEM | DRIVER_MODESET,
 	.fops = &mgag200_driver_fops,
 	.name = DRIVER_NAME,
 	.desc = DRIVER_DESC,
@@ -104,9 +106,7 @@ static struct drm_driver driver = {
 	.major = DRIVER_MAJOR,
 	.minor = DRIVER_MINOR,
 	.patchlevel = DRIVER_PATCHLEVEL,
-	.dumb_create = mgag200_driver_dumb_create,
-	.dumb_map_offset = drm_gem_vram_driver_dumb_mmap_offset,
-	.gem_prime_mmap = drm_gem_prime_mmap,
+	DRM_GEM_SHMEM_DRIVER_OPS,
 };
 
 static struct pci_driver mgag200_pci_driver = {

@@ -3,8 +3,12 @@
 #
 # Run a couple of IP defragmentation tests.
 
+modprobe -q nf_defrag_ipv6
+
 set +x
 set -e
+
+modprobe -q nf_defrag_ipv6
 
 readonly NETNS="ns-$(mktemp -u XXXXXX)"
 

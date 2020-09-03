@@ -764,7 +764,7 @@ static int dwc_otg_driver_probe(
 	}
 
 	dwc_otg_device->os_dep.base =
-	    ioremap_nocache(dwc_otg_device->os_dep.rsrc_start,
+	    ioremap(dwc_otg_device->os_dep.rsrc_start,
 			    dwc_otg_device->os_dep.rsrc_len);
 	if (dwc_otg_device->os_dep.base == NULL) {
 		dev_dbg(&_dev->dev, "error mapping memory\n");
@@ -798,7 +798,7 @@ static int dwc_otg_driver_probe(
           goto fail;
         }
 
-	dwc_otg_device->os_dep.base = ioremap_nocache(_dev->resource[0].start,
+	dwc_otg_device->os_dep.base = ioremap(_dev->resource[0].start,
                                                       _dev->resource[0].end -
                                                       _dev->resource[0].start+1);
 	if (fiq_enable)
@@ -811,7 +811,7 @@ static int dwc_otg_driver_probe(
 			goto fail;
 		}
 
-		dwc_otg_device->os_dep.mphi_base = ioremap_nocache(_dev->resource[1].start,
+		dwc_otg_device->os_dep.mphi_base = ioremap(_dev->resource[1].start,
 							    _dev->resource[1].end -
 							    _dev->resource[1].start + 1);
 		dwc_otg_device->os_dep.use_swirq = (_dev->resource[1].end - _dev->resource[1].start) == 0x200;

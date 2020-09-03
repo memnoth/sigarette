@@ -47,7 +47,7 @@ struct sm_cmd_rsp_blk {
 
 struct sm_instance {
 	u32 num_connections;
-	VCHI_SERVICE_HANDLE_T vchi_handle[VCHI_MAX_NUM_CONNECTIONS];
+	struct vchi_service_handle * vchi_handle[VCHI_MAX_NUM_CONNECTIONS];
 	struct task_struct *io_thread;
 	struct completion io_cmplt;
 
@@ -76,7 +76,7 @@ struct sm_instance {
 
 /* ---- Private Functions ------------------------------------------------ */
 static int
-bcm2835_vchi_msg_queue(VCHI_SERVICE_HANDLE_T handle,
+bcm2835_vchi_msg_queue(struct vchi_service_handle * handle,
 		       void *data,
 		       unsigned int size)
 {
@@ -265,7 +265,7 @@ static int vc_sm_cma_vchi_videocore_io(void *arg)
 }
 
 static void vc_sm_cma_vchi_callback(void *param,
-				    const VCHI_CALLBACK_REASON_T reason,
+				    const enum vchi_callback_reason reason,
 				    void *msg_handle)
 {
 	struct sm_instance *instance = param;
@@ -284,7 +284,7 @@ static void vc_sm_cma_vchi_callback(void *param,
 	}
 }
 
-struct sm_instance *vc_sm_cma_vchi_init(VCHI_INSTANCE_T vchi_instance,
+struct sm_instance *vc_sm_cma_vchi_init(struct vchi_instance_handle * vchi_instance,
 					unsigned int num_connections,
 					vpu_event_cb vpu_event)
 {

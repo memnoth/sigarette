@@ -112,6 +112,37 @@ static inline s32 iqk_mult(s32 x, s32 y, s32 *ext)
 	return (t >> 8);	/* Q.16 --> Q.8 */
 }
 
+#define OFDM_SWING_A(swing)		FIELD_GET(GENMASK(9, 0), swing)
+#define OFDM_SWING_B(swing)		FIELD_GET(GENMASK(15, 10), swing)
+#define OFDM_SWING_C(swing)		FIELD_GET(GENMASK(21, 16), swing)
+#define OFDM_SWING_D(swing)		FIELD_GET(GENMASK(31, 22), swing)
+#define RTW_DEF_OFDM_SWING_INDEX	28
+#define RTW_DEF_CCK_SWING_INDEX		28
+
+#define MAX_TOLERANCE	5
+#define IQK_TX_X_ERR	0x142
+#define IQK_TX_Y_ERR	0x42
+#define IQK_RX_X_UPPER	0x11a
+#define IQK_RX_X_LOWER	0xe6
+#define IQK_RX_Y_LMT	0x1a
+#define IQK_TX_OK	BIT(0)
+#define IQK_RX_OK	BIT(1)
+#define PATH_IQK_RETRY	2
+
+#define SPUR_THRES		0x16
+#define CCK_DFIR_NR		3
+#define DIS_3WIRE		0xccf000c0
+#define EN_3WIRE		0xccc000c0
+#define START_PSD		0x400000
+#define FREQ_CH13		0xfccd
+#define FREQ_CH14		0xff9a
+#define RFCFGCH_CHANNEL_MASK	GENMASK(7, 0)
+#define RFCFGCH_BW_MASK		(BIT(11) | BIT(10))
+#define RFCFGCH_BW_20M		(BIT(11) | BIT(10))
+#define RFCFGCH_BW_40M		BIT(10)
+#define BIT_MASK_RFMOD		BIT(0)
+#define BIT_LCK			BIT(15)
+
 #define REG_GPIO_INTM		0x0048
 #define REG_BTG_SEL		0x0067
 #define BIT_MASK_BTG_WL		BIT(7)
@@ -127,7 +158,10 @@ static inline s32 iqk_mult(s32 x, s32 y, s32 *ext)
 #define REG_FPGA1_RFMOD		0x0900
 #define REG_BB_SEL_BTG		0x0948
 #define REG_BBRX_DFIR		0x0954
+#define BIT_MASK_RXBB_DFIR	GENMASK(27, 24)
+#define BIT_RXBB_DFIR_EN	BIT(19)
 #define REG_CCK0_SYS		0x0a00
+#define BIT_CCK_SIDE_BAND	BIT(4)
 #define REG_CCK_ANT_SEL_11N	0x0a04
 #define REG_CCK_FA_RST_11N	0x0a2c
 #define BIT_MASK_CCK_CNT_KEEP	BIT(12)
@@ -152,6 +186,8 @@ static inline s32 iqk_mult(s32 x, s32 y, s32 *ext)
 #define BIT_MASK_RXIQ_S1_Y1	0x0000FC00
 #define BIT_SET_RXIQ_S1_Y1(y)	((y) & 0x3F)
 #define REG_OFDM0_RXDSP		0x0c40
+#define BIT_MASK_RXDSP		GENMASK(28, 24)
+#define BIT_EN_RXDSP		BIT(9)
 #define REG_OFDM_0_ECCA_THRESHOLD	0x0c4c
 #define BIT_MASK_OFDM0_EXT_A	BIT(31)
 #define BIT_MASK_OFDM0_EXT_C	BIT(29)
@@ -193,6 +229,7 @@ static inline s32 iqk_mult(s32 x, s32 y, s32 *ext)
 #define REG_CTX			0x0d03
 #define BIT_MASK_CTX_TYPE	GENMASK(6, 4)
 #define REG_OFDM1_CFOTRK	0x0d2c
+#define BIT_EN_CFOTRK		BIT(28)
 #define REG_OFDM1_CSI1		0x0d40
 #define REG_OFDM1_CSI2		0x0d44
 #define REG_OFDM1_CSI3		0x0d48

@@ -42,10 +42,11 @@ struct cma *dma_contiguous_default_area;
  * Users, who want to set the size of global CMA area for their system
  * should use cma= kernel parameter.
  */
-static const phys_addr_t size_bytes = (phys_addr_t)CMA_SIZE_MBYTES * SZ_1M;
-static phys_addr_t size_cmdline = -1;
-static phys_addr_t base_cmdline;
-static phys_addr_t limit_cmdline;
+static const phys_addr_t size_bytes __initconst =
+	(phys_addr_t)CMA_SIZE_MBYTES * SZ_1M;
+static phys_addr_t  size_cmdline __initdata = -1;
+static phys_addr_t base_cmdline __initdata;
+static phys_addr_t limit_cmdline __initdata;
 
 static int __init early_cma(char *p)
 {
@@ -221,8 +222,8 @@ bool dma_release_from_contiguous(struct device *dev, struct page *pages,
  * @gfp:   Allocation flags.
  *
  * This function allocates contiguous memory buffer for specified device. It
- * first tries to use device specific contiguous memory area if available or
- * the default global one, then tries a fallback allocation of normal pages.
+ * tries to use device specific contiguous memory area if available, or the
+ * default global one.
  *
  * Note that it byapss one-page size of allocations from the global area as
  * the addresses within one page are always contiguous, so there is no need

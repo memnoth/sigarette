@@ -60,6 +60,9 @@
 #if (LINUX_VERSION_CODE <= KERNEL_VERSION(2,6,17))
 #include <linux/devfs_fs_kernel.h>
 #endif
+#if (LINUX_VERSION_CODE > KERNEL_VERSION(5,6,0))
+#include <linux/part_stat.h>
+#endif
 
 /* driver */
 #define MODULE_NAME		"hio"
@@ -86,6 +89,10 @@
 #define hio_note(f, arg...) printk(KERN_NOTICE MODULE_NAME"note: " f , ## arg)
 #define hio_warn(f, arg...) printk(KERN_WARNING MODULE_NAME"warn: " f , ## arg)
 #define hio_err(f, arg...)  printk(KERN_ERR MODULE_NAME"err: " f , ## arg)
+
+#if (LINUX_VERSION_CODE > KERNEL_VERSION(5,6,0))
+struct hd_struct *disk_map_sector_rcu(struct gendisk *disk, sector_t sector);
+#endif
 
 /* slave port */
 #define SSD_SLAVE_PORT_DEVID	0x000a
@@ -2323,12 +2330,21 @@ static int ssd_proc_open(struct inode *inode, struct file *file)
 #endif
 }
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5,6,0))
 static const struct file_operations ssd_proc_fops = {
 	.open		= ssd_proc_open,
 	.read		= seq_read,
 	.llseek		= seq_lseek,
 	.release	= single_release,
 };
+#else
+static const struct proc_ops ssd_proc_fops = {
+	.proc_open	= ssd_proc_open,
+	.proc_read	= seq_read,
+	.proc_lseek	= seq_lseek,
+	.proc_release	= single_release,
+};
+#endif
 #endif
 
 
@@ -4135,7 +4151,9 @@ static void ssd_end_io_acct(struct ssd_cmd *cmd)
 	unsigned long flag;
 #endif
 	
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,8,0))
+	bio_end_io_acct(bio, cmd->start_time);
+#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0))
 	struct hd_struct *part = disk_map_sector_rcu(dev->gd, bio_start(bio));
 	generic_end_io_acct(dev->rq, rw, part, cmd->start_time);
 #elif ((LINUX_VERSION_CODE >= KERNEL_VERSION(3,0,0)) || (defined RHEL_MAJOR && RHEL_MAJOR == 6 && RHEL_MINOR >= 7))
@@ -4195,9 +4213,12 @@ static void ssd_start_io_acct(struct ssd_cmd *cmd)
 	unsigned long flag;
 #endif
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,8,0))
+	cmd->start_time = bio_start_io_acct(bio);
+#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0))
 	struct hd_struct *part = disk_map_sector_rcu(dev->gd, bio_start(bio));
 	generic_start_io_acct(dev->rq, rw, bio_sectors(bio), part);
+	cmd->start_time = jiffies;
 #elif ((LINUX_VERSION_CODE >= KERNEL_VERSION(3,0,0)) || (defined RHEL_MAJOR && RHEL_MAJOR == 6 && RHEL_MINOR >= 7))
 	int cpu = part_stat_lock();
 	struct hd_struct *part = disk_map_sector_rcu(dev->gd, bio_start(bio));
@@ -4206,6 +4227,7 @@ static void ssd_start_io_acct(struct ssd_cmd *cmd)
 	part_stat_add(cpu, part, sectors[rw], bio_sectors(bio));
 	part_inc_in_flight(part, rw);
 	part_stat_unlock();
+	cmd->start_time = jiffies;
 #elif (LINUX_VERSION_CODE > KERNEL_VERSION(2,6,27))
 	int cpu = part_stat_lock();
 	struct hd_struct *part = &dev->gd->part0;
@@ -4218,6 +4240,7 @@ static void ssd_start_io_acct(struct ssd_cmd *cmd)
 	spin_unlock_irqrestore(&dev->in_flight_lock,flag);	
 	
 	part_stat_unlock();
+	cmd->start_time = jiffies;
 
 #elif (LINUX_VERSION_CODE > KERNEL_VERSION(2,6,14))
 	preempt_disable();
@@ -4230,6 +4253,7 @@ static void ssd_start_io_acct(struct ssd_cmd *cmd)
 	spin_unlock_irqrestore(&dev->in_flight_lock,flag);	
 	
 	preempt_enable();
+	cmd->start_time = jiffies;
 #else
 	preempt_disable();
 	disk_round_stats(dev->gd);
@@ -4246,10 +4270,8 @@ static void ssd_start_io_acct(struct ssd_cmd *cmd)
 	spin_unlock_irqrestore(&dev->in_flight_lock,flag);	
 	
 	preempt_enable();
-
-#endif
-
 	cmd->start_time = jiffies;
+#endif
 }
 
 /* io */
@@ -10398,6 +10420,7 @@ static void ssd_cleanup_queue(struct ssd_device *dev)
 
 static int ssd_init_queue(struct ssd_device *dev)
 {
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5,7,0))
 	dev->rq = blk_alloc_queue(GFP_KERNEL);
 	if (dev->rq == NULL) {
 		hio_warn("%s: alloc queue: failed\n ", dev->name);
@@ -10406,7 +10429,13 @@ static int ssd_init_queue(struct ssd_device *dev)
 
 	/* must be first */
 	blk_queue_make_request(dev->rq, ssd_make_request);
-
+#else
+	dev->rq = blk_alloc_queue(ssd_make_request, NUMA_NO_NODE);
+	if (dev->rq == NULL) {
+		hio_warn("%s: blk_alloc_queue(): failed\n ", dev->name);
+		goto out_init_queue;
+	}
+#endif
 #if ((LINUX_VERSION_CODE < KERNEL_VERSION(2,6,34)) && !(defined RHEL_MAJOR && RHEL_MAJOR == 6))
 	blk_queue_max_hw_segments(dev->rq, dev->hw_info.cmd_max_sg);
 	blk_queue_max_phys_segments(dev->rq, dev->hw_info.cmd_max_sg);

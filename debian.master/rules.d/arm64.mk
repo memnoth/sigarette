@@ -7,7 +7,7 @@ build_image_generic	= Image.gz
 kernel_file_generic	= arch/$(build_arch)/boot/Image.gz
 install_file	= vmlinuz
 no_dumpfile = true
-uefi_signed     = true
+uefi_signed     = false
 
 loader		= grub
 vdso		= vdso_install
@@ -21,4 +21,3 @@ do_tools_bpftool = true
 
 do_dtbs		= true
 do_zfs		= true
-do_dkms_wireguard = true

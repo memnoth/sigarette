@@ -21,6 +21,8 @@
 #include "vchiq-mmal/mmal-parameters.h"
 #include "vchiq-mmal/mmal-vchiq.h"
 
+#include "vc-sm-cma/vc_sm_knl.h"
+
 #include "bcm2835_isp_ctrls.h"
 #include "bcm2835_isp_fmts.h"
 
@@ -722,10 +724,38 @@ static int bcm2835_isp_s_ctrl(struct v4l2_ctrl *ctrl)
 				    sizeof(struct bcm2835_isp_custom_ccm));
 		break;
 	case V4L2_CID_USER_BCM2835_ISP_LENS_SHADING:
-		ret = set_isp_param(node, MMAL_PARAMETER_LENS_SHADING_OVERRIDE,
-				    ctrl->p_new.p_u8,
-				    sizeof(struct bcm2835_isp_lens_shading));
+	{
+		struct bcm2835_isp_lens_shading ls;
+		struct dma_buf *dmabuf;
+		void *vcsm_handle;
+
+		memcpy(&ls, ctrl->p_new.p_u8,
+		       sizeof(struct bcm2835_isp_lens_shading));
+
+		dmabuf = dma_buf_get(ls.dmabuf);
+		if (!dmabuf)
+			return -EINVAL;
+
+		ret = vc_sm_cma_import_dmabuf(dmabuf,
+					      &vcsm_handle);
+		if (ret) {
+			dma_buf_put(dmabuf);
+			return -EINVAL;
+		}
+
+		ls.dmabuf = vc_sm_cma_int_handle(vcsm_handle);
+		if (ls.dmabuf)
+			ret = set_isp_param(node,
+					    MMAL_PARAMETER_LENS_SHADING_OVERRIDE,
+					    &ls,
+					    sizeof(struct bcm2835_isp_lens_shading));
+		else
+			ret = -EINVAL;
+
+		vc_sm_cma_free(vcsm_handle);
+		dma_buf_put(dmabuf);
 		break;
+	}
 	case V4L2_CID_USER_BCM2835_ISP_BLACK_LEVEL:
 		ret = set_isp_param(node, MMAL_PARAMETER_BLACK_LEVEL,
 				    ctrl->p_new.p_u8,
@@ -1006,15 +1036,32 @@ static int bcm2835_isp_node_s_selection(struct file *file, void *fh,
 	if (!s->r.width || !s->r.height)
 		return -EINVAL;
 
-	/* Adjust the crop window if goes outside the frame dimensions. */
-	s->r.left = min((unsigned int)max(s->r.left, 0),
-			node->q_data.width - MIN_DIM);
-	s->r.top = min((unsigned int)max(s->r.top, 0),
-		       node->q_data.height - MIN_DIM);
-	s->r.width = max(min(s->r.width, node->q_data.width - s->r.left),
-			 MIN_DIM);
-	s->r.height = max(min(s->r.height, node->q_data.height - s->r.top),
-			  MIN_DIM);
+	/* We can only set crop on the input. */
+	switch (s->target) {
+	case V4L2_SEL_TGT_CROP:
+		/*
+		 * Adjust the crop window if it goes outside of the frame
+		 * dimensions.
+		 */
+		s->r.left = min((unsigned int)max(s->r.left, 0),
+				node->q_data.width - MIN_DIM);
+		s->r.top = min((unsigned int)max(s->r.top, 0),
+			       node->q_data.height - MIN_DIM);
+		s->r.width = max(min(s->r.width,
+				     node->q_data.width - s->r.left), MIN_DIM);
+		s->r.height = max(min(s->r.height,
+				      node->q_data.height - s->r.top), MIN_DIM);
+		break;
+	case V4L2_SEL_TGT_CROP_DEFAULT:
+		/* Default (i.e. no) crop window. */
+		s->r.left = 0;
+		s->r.top = 0;
+		s->r.width = node->q_data.width;
+		s->r.height = node->q_data.height;
+		break;
+	default:
+		return -EINVAL;
+	}
 
 	crop.rect.x = s->r.left;
 	crop.rect.y = s->r.top;
@@ -1029,33 +1076,40 @@ static int bcm2835_isp_node_s_selection(struct file *file, void *fh,
 static int bcm2835_isp_node_g_selection(struct file *file, void *fh,
 					struct v4l2_selection *s)
 {
-	struct bcm2835_isp_node *node = video_drvdata(file);
-	struct bcm2835_isp_dev *dev = node_get_dev(node);
-	struct vchiq_mmal_port *port = get_port_data(node);
 	struct mmal_parameter_crop crop;
+	struct bcm2835_isp_node *node = video_drvdata(file);
+	struct vchiq_mmal_port *port = get_port_data(node);
+	struct bcm2835_isp_dev *dev = node_get_dev(node);
 	u32 crop_size = sizeof(crop);
 	int ret;
 
-	/* This return value is required for V4L2 compliance. */
-	if (node_is_stats(node))
-		return -ENOTTY;
-
 	/* We can only return out an input crop. */
-	if (s->target != V4L2_SEL_TGT_CROP)
-		return -EINVAL;
+	switch (s->target) {
+	case V4L2_SEL_TGT_CROP:
+		ret = vchiq_mmal_port_parameter_get(dev->mmal_instance, port,
+						    MMAL_PARAMETER_CROP,
+						    &crop, &crop_size);
+		if (!ret) {
+			s->r.left = crop.rect.x;
+			s->r.top = crop.rect.y;
+			s->r.width = crop.rect.width;
+			s->r.height = crop.rect.height;
+		}
+		break;
+	case V4L2_SEL_TGT_CROP_DEFAULT:
+	case V4L2_SEL_TGT_CROP_BOUNDS:
+		/* Default (i.e. no) crop window. */
+		s->r.left = 0;
+		s->r.top = 0;
+		s->r.width = node->q_data.width;
+		s->r.height = node->q_data.height;
+		ret = 0;
+		break;
+	default:
+		ret =  -EINVAL;
+	}
 
-	ret = vchiq_mmal_port_parameter_get(dev->mmal_instance, port,
-					    MMAL_PARAMETER_CROP,
-					    &crop, &crop_size);
-	if (!ret)
-		return -EINVAL;
-
-	s->r.left = crop.rect.x;
-	s->r.top = crop.rect.y;
-	s->r.width = crop.rect.width;
-	s->r.height = crop.rect.height;
-
-	return 0;
+	return ret;
 }
 
 static int bcm3285_isp_subscribe_event(struct v4l2_fh *fh,
@@ -1110,10 +1164,10 @@ static const struct v4l2_ioctl_ops bcm2835_isp_node_ioctl_ops = {
  * Size of the array to provide to the VPU when asking for the list of supported
  * formats.
  *
- * The ISP component currently advertises 33 input formats, so add a small
+ * The ISP component currently advertises 44 input formats, so add a small
  * overhead on that.
  */
-#define MAX_SUPPORTED_ENCODINGS 40
+#define MAX_SUPPORTED_ENCODINGS 50
 
 /* Populate node->supported_fmts with the formats supported by those ports. */
 static int bcm2835_isp_get_supported_fmts(struct bcm2835_isp_node *node)
@@ -1218,6 +1272,8 @@ static int register_node(struct bcm2835_isp_dev *dev,
 		node->vfl_dir = VFL_DIR_RX;
 		node->name = "stats";
 		v4l2_disable_ioctl(&node->vfd, VIDIOC_S_CTRL);
+		v4l2_disable_ioctl(&node->vfd, VIDIOC_S_SELECTION);
+		v4l2_disable_ioctl(&node->vfd, VIDIOC_G_SELECTION);
 		break;
 	}
 
@@ -1231,7 +1287,7 @@ static int register_node(struct bcm2835_isp_dev *dev,
 		return ret;
 
 	/* Initialise the the video node. */
-	vfd->vfl_type	= VFL_TYPE_GRABBER;
+	vfd->vfl_type	= VFL_TYPE_VIDEO;
 	vfd->fops	= &bcm2835_isp_fops,
 	vfd->ioctl_ops	= &bcm2835_isp_node_ioctl_ops,
 	vfd->minor	= -1,
@@ -1269,21 +1325,6 @@ static int register_node(struct bcm2835_isp_dev *dev,
 	}
 	node->queue_init = true;
 
-	/* Define the device names */
-	snprintf(vfd->name, sizeof(node->vfd.name), "%s-%s%d", BCM2835_ISP_NAME,
-		 node->name, node->id);
-
-	ret = video_register_device(vfd, VFL_TYPE_GRABBER, video_nr + index);
-	if (ret) {
-		v4l2_err(&dev->v4l2_dev,
-			 "Failed to register video %s[%d] device node\n",
-			 node->name, node->id);
-		return ret;
-	}
-
-	node->registered = true;
-	video_set_drvdata(vfd, node);
-
 	/* Set some controls and defaults, but only on the VIDEO_OUTPUT node. */
 	if (node_is_output(node)) {
 		unsigned int i;
@@ -1298,7 +1339,12 @@ static int register_node(struct bcm2835_isp_dev *dev,
 			.step		= 1,
 		};
 
-		v4l2_ctrl_handler_init(&dev->ctrl_handler, 4);
+		ret = v4l2_ctrl_handler_init(&dev->ctrl_handler, 12);
+		if (ret) {
+			v4l2_err(&dev->v4l2_dev, "ctrl_handler init failed (%d)\n",
+				 ret);
+			return ret;
+		}
 
 		dev->r_gain = 1000;
 		dev->b_gain = 1000;
@@ -1324,13 +1370,39 @@ static int register_node(struct bcm2835_isp_dev *dev,
 		}
 
 		node->vfd.ctrl_handler = &dev->ctrl_handler;
+		if (dev->ctrl_handler.error) {
+			ret = dev->ctrl_handler.error;
+			v4l2_err(&dev->v4l2_dev, "controls init failed (%d)\n",
+				 ret);
+			v4l2_ctrl_handler_free(&dev->ctrl_handler);
+			goto ctrl_cleanup;
+		}
 	}
+
+	/* Define the device names */
+	snprintf(vfd->name, sizeof(node->vfd.name), "%s-%s%d", BCM2835_ISP_NAME,
+		 node->name, node->id);
+
+	ret = video_register_device(vfd, VFL_TYPE_VIDEO, video_nr + index);
+	if (ret) {
+		v4l2_err(&dev->v4l2_dev,
+			 "Failed to register video %s[%d] device node\n",
+			 node->name, node->id);
+		goto ctrl_cleanup;
+	}
+
+	node->registered = true;
+	video_set_drvdata(vfd, node);
 
 	v4l2_info(&dev->v4l2_dev,
 		  "Device node %s[%d] registered as /dev/video%d\n",
 		  node->name, node->id, vfd->num);
 
 	return 0;
+
+ctrl_cleanup:
+	v4l2_ctrl_handler_free(&dev->ctrl_handler);
+	return ret;
 }
 
 /* Unregister one of the /dev/video<N> nodes associated with the ISP. */

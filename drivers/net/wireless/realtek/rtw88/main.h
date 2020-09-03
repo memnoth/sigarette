@@ -11,6 +11,7 @@
 #include <linux/average.h>
 #include <linux/bitops.h>
 #include <linux/bitfield.h>
+#include <linux/iopoll.h>
 #include <linux/interrupt.h>
 
 #include "util.h"
@@ -38,20 +39,12 @@
 extern bool rtw_bf_support;
 extern unsigned int rtw_fw_lps_deep_mode;
 extern unsigned int rtw_debug_mask;
-extern bool rtw_edcca_enabled;
 extern const struct ieee80211_ops rtw_ops;
-extern struct rtw_chip_info rtw8822b_hw_spec;
-extern struct rtw_chip_info rtw8822c_hw_spec;
-extern struct rtw_chip_info rtw8723d_hw_spec;
 
 #define RTW_MAX_CHANNEL_NUM_2G 14
 #define RTW_MAX_CHANNEL_NUM_5G 49
 
 struct rtw_dev;
-struct rtw_sar_rwrd;
-union rtw_sar_rwsi;
-union rtw_sar_rwgs;
-struct rtw_sar_read;
 
 enum rtw_hci_type {
 	RTW_HCI_TYPE_PCIE,
@@ -344,6 +337,7 @@ enum rtw_regulatory_domains {
 	RTW_REGD_CHILE		= 6,
 	RTW_REGD_UKRAINE	= 7,
 	RTW_REGD_MEXICO		= 8,
+	RTW_REGD_CN		= 9,
 	RTW_REGD_WW,
 
 	RTW_REGD_MAX
@@ -401,13 +395,6 @@ enum rtw_wow_flags {
 
 	/* keep it last */
 	RTW_WOW_FLAG_MAX,
-};
-
-enum rtw_sar_sources {
-	RTW_SAR_SOURCE_NONE,
-	RTW_SAR_SOURCE_VNDCMD,
-	RTW_SAR_SOURCE_ACPI_STATIC,
-	RTW_SAR_SOURCE_ACPI_DYNAMIC,
 };
 
 /* the power index is represented by differences, which cck-1s & ht40-1s are
@@ -529,6 +516,12 @@ struct rtw_hw_reg {
 	u32 mask;
 };
 
+struct rtw_ltecoex_addr {
+	u32 ctrl;
+	u32 wdata;
+	u32 rdata;
+};
+
 struct rtw_reg_domain {
 	u32 addr;
 	u32 mask;
@@ -541,22 +534,11 @@ struct rtw_reg_domain {
 	u8 domain;
 };
 
-struct rtw_hw_reg_offset {
-	struct rtw_hw_reg hw_reg;
-	u8 offset;
-};
-
 struct rtw_rf_sipi_addr {
 	u32 hssi_1;
 	u32 hssi_2;
 	u32 lssi_read;
 	u32 lssi_read_pi;
-};
-
-struct rtw_ltecoex_addr {
-	u32 ctrl;
-	u32 wdata;
-	u32 rdata;
 };
 
 struct rtw_backup_info {
@@ -606,12 +588,9 @@ struct rtw_tx_pkt_info {
 	bool short_gi;
 	bool report;
 	bool rts;
-	bool nav_use_hdr;
 	bool dis_qselseq;
 	bool en_hwseq;
 	u8 hw_ssn_sel;
-	bool en_hw_exseq;
-	bool bt_null;
 };
 
 struct rtw_rx_pkt_stat {
@@ -834,8 +813,9 @@ struct rtw_chip_ops {
 	void (*set_tx_power_index)(struct rtw_dev *rtwdev);
 	int (*rsvd_page_dump)(struct rtw_dev *rtwdev, u8 *buf, u32 offset,
 			      u32 size);
-	void (*set_antenna)(struct rtw_dev *rtwdev, u8 antenna_tx,
-			    u8 antenna_rx);
+	int (*set_antenna)(struct rtw_dev *rtwdev,
+			   u32 antenna_tx,
+			   u32 antenna_rx);
 	void (*cfg_ldo25)(struct rtw_dev *rtwdev, bool enable);
 	void (*efuse_grant)(struct rtw_dev *rtwdev, bool enable);
 	void (*false_alarm_statistics)(struct rtw_dev *rtwdev);
@@ -850,8 +830,6 @@ struct rtw_chip_ops {
 			      struct ieee80211_bss_conf *conf);
 	void (*cfg_csi_rate)(struct rtw_dev *rtwdev, u8 rssi, u8 cur_rate,
 			     u8 fixrate_en, u8 *new_rate);
-	void (*adaptivity_init)(struct rtw_dev *rtwdev);
-	void (*adaptivity)(struct rtw_dev *rtwdev);
 
 	/* for coex */
 	void (*coex_set_init)(struct rtw_dev *rtwdev);
@@ -1024,10 +1002,10 @@ struct rtw_wow_param {
 };
 
 struct rtw_intf_phy_para_table {
-	struct rtw_intf_phy_para *usb2_para;
-	struct rtw_intf_phy_para *usb3_para;
-	struct rtw_intf_phy_para *gen1_para;
-	struct rtw_intf_phy_para *gen2_para;
+	const struct rtw_intf_phy_para *usb2_para;
+	const struct rtw_intf_phy_para *usb3_para;
+	const struct rtw_intf_phy_para *gen1_para;
+	const struct rtw_intf_phy_para *gen2_para;
 	u8 n_usb2_para;
 	u8 n_usb3_para;
 	u8 n_gen1_para;
@@ -1124,6 +1102,7 @@ struct rtw_chip_info {
 	u8 dig_min;
 	u8 txgi_factor;
 	bool is_pwr_by_rate_dec;
+	bool rx_ldpc;
 	u8 max_power_index;
 
 	bool ht_supported;
@@ -1132,20 +1111,20 @@ struct rtw_chip_info {
 
 	/* init values */
 	u8 sys_func_en;
-	struct rtw_pwr_seq_cmd **pwr_on_seq;
-	struct rtw_pwr_seq_cmd **pwr_off_seq;
-	struct rtw_rqpn *rqpn_table;
-	struct rtw_prioq_addrs *prioq_addrs;
-	struct rtw_page_table *page_table;
-	struct rtw_intf_phy_para_table *intf_table;
+	const struct rtw_pwr_seq_cmd **pwr_on_seq;
+	const struct rtw_pwr_seq_cmd **pwr_off_seq;
+	const struct rtw_rqpn *rqpn_table;
+	const struct rtw_prioq_addrs *prioq_addrs;
+	const struct rtw_page_table *page_table;
+	const struct rtw_intf_phy_para_table *intf_table;
 
-	struct rtw_hw_reg *dig;
-	struct rtw_hw_reg *dig_cck;
+	const struct rtw_hw_reg *dig;
+	const struct rtw_hw_reg *dig_cck;
 	u32 rf_base_addr[2];
 	u32 rf_sipi_addr[2];
-	struct rtw_rf_sipi_addr *rf_sipi_read_addr;
+	const struct rtw_rf_sipi_addr *rf_sipi_read_addr;
 	u8 fix_rf_phy_num;
-	struct rtw_ltecoex_addr *ltecoex_addr;
+	const struct rtw_ltecoex_addr *ltecoex_addr;
 
 	const struct rtw_table *mac_tbl;
 	const struct rtw_table *agc_tbl;
@@ -1163,10 +1142,6 @@ struct rtw_chip_info {
 
 	u8 bfer_su_max_num;
 	u8 bfer_mu_max_num;
-
-	struct rtw_hw_reg_offset *edcca_th;
-	s8 l2h_th_ini_cs;
-	s8 l2h_th_ini_ad;
 
 	const char *wow_fw_name;
 	const struct wiphy_wowlan_support *wowlan_stub;
@@ -1444,20 +1419,6 @@ struct rtw_pkt_count {
 DECLARE_EWMA(evm, 10, 4);
 DECLARE_EWMA(snr, 10, 4);
 
-#define EDCCA_TH_L2H_IDX 0
-#define EDCCA_TH_H2L_IDX 1
-#define EDCCA_TH_L2H_LB 48
-#define EDCCA_ADC_BACKOFF 12
-#define EDCCA_IGI_BASE 50
-#define EDCCA_IGI_L2H_DIFF 8
-#define EDCCA_L2H_H2L_DIFF 7
-#define EDCCA_L2H_H2L_DIFF_NORMAL 8
-
-enum rtw_edcca_mode {
-	RTW_EDCCA_NORMAL	= 0,
-	RTW_EDCCA_ADAPTIVITY	= 1,
-};
-
 struct rtw_iqk_info {
 	bool done;
 	struct {
@@ -1530,9 +1491,6 @@ struct rtw_dm_info {
 	struct ewma_evm ewma_evm[RTW_EVM_NUM];
 	struct ewma_snr ewma_snr[RTW_SNR_NUM];
 
-	s8 l2h_th_ini;
-	enum rtw_edcca_mode edcca_mode;
-
 	struct rtw_iqk_info iqk;
 };
 
@@ -1545,7 +1503,6 @@ struct rtw_efuse {
 	u8 addr[ETH_ALEN];
 	u8 channel_plan;
 	u8 country_code[2];
-	bool country_worldwide;
 	u8 rf_board_option;
 	u8 rfe_option;
 	u8 power_track_type;
@@ -1633,7 +1590,7 @@ struct rtw_fifo_conf {
 	u16 rsvd_cpu_instr_addr;
 	u16 rsvd_fw_txbuf_addr;
 	u16 rsvd_csibuf_addr;
-	struct rtw_rqpn *rqpn;
+	const struct rtw_rqpn *rqpn;
 };
 
 struct rtw_fw_state {
@@ -1646,20 +1603,10 @@ struct rtw_fw_state {
 	u16 h2c_version;
 };
 
-struct rtw_sar {
-	enum rtw_sar_sources source;
-	struct rtw_sar_rwrd *rwrd;
-	union rtw_sar_rwsi *rwsi;
-	union rtw_sar_rwgs *rwgs;
-	const struct rtw_sar_read *read;
-	struct delayed_work work;
-};
-
 struct rtw_hal {
 	u32 rcr;
 
 	u32 chip_version;
-	u8 fab_version;
 	u8 cut_version;
 	u8 mp_chip;
 	u8 oem_id;
@@ -1679,8 +1626,8 @@ struct rtw_hal {
 	u8 rf_type;
 	u8 rf_path_num;
 	u8 rf_phy_num;
-	u8 antenna_tx;
-	u8 antenna_rx;
+	u32 antenna_tx;
+	u32 antenna_rx;
 	u8 bfee_sts_cap;
 
 	/* protect tx power section */
@@ -1701,10 +1648,6 @@ struct rtw_hal {
 			  [RTW_CHANNEL_WIDTH_MAX]
 			  [RTW_RATE_SECTION_MAX]
 			  [RTW_MAX_CHANNEL_NUM_5G];
-	s8 tx_pwr_sar_2g[RTW_REGD_MAX][RTW_RF_PATH_MAX][RTW_RATE_SECTION_MAX]
-			[RTW_MAX_CHANNEL_NUM_2G];
-	s8 tx_pwr_sar_5g[RTW_REGD_MAX][RTW_RF_PATH_MAX][RTW_RATE_SECTION_MAX]
-			[RTW_MAX_CHANNEL_NUM_5G];
 	s8 tx_pwr_tbl[RTW_RF_PATH_MAX]
 		     [DESC_RATE_MAX];
 };
@@ -1777,12 +1720,10 @@ struct rtw_dev {
 	struct rtw_fw_state wow_fw;
 	struct rtw_wow_param wow;
 
-	struct rtw_sar sar;
-
 	bool need_rfk;
 
 	/* hci related data, must be last */
-	u8 priv[0] __aligned(sizeof(void *));
+	u8 priv[] __aligned(sizeof(void *));
 };
 
 #include "hci.h"
@@ -1838,6 +1779,11 @@ static inline bool rtw_chip_wcpu_11n(struct rtw_dev *rtwdev)
 static inline bool rtw_chip_wcpu_11ac(struct rtw_dev *rtwdev)
 {
 	return rtwdev->chip->wlan_cpu == RTW_WCPU_11AC;
+}
+
+static inline bool rtw_chip_has_rx_ldpc(struct rtw_dev *rtwdev)
+{
+	return rtwdev->chip->rx_ldpc;
 }
 
 void rtw_get_channel_params(struct cfg80211_chan_def *chandef,

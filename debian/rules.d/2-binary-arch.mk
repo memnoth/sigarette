@@ -400,21 +400,16 @@ endif
 
 	$(if $(filter true,$(enable_zfs)),$(call build_dkms, $(mods_pkg_name)-$*, $(pkgdir)/lib/modules/$(abi_release)-$*/kernel, $(dbgpkgdir_zfs), zfs, pool/universe/z/zfs-linux/zfs-dkms_$(dkms_zfs_linux_version)_all.deb))
 
-	$(if $(filter true,$(do_dkms_wireguard)),$(call build_dkms, $(mods_pkg_name)-$*, $(pkgdir)/lib/modules/$(abi_release)-$*/kernel, "", wireguard, pool/universe/w/wireguard-linux-compat/wireguard-dkms_$(dkms_wireguard_version)_all.deb))
-
 ifeq ($(do_dkms_nvidia),true)
 	$(call build_dkms, $(bldinfo_pkg_name)-$*, $(pkgdir_bldinfo)/usr/lib/linux/$(abi_release)-$*/signatures, "", nvidia-390, pool/restricted/n/nvidia-graphics-drivers-390/nvidia-kernel-source-390_$(dkms_nvidia_390_version)_$(arch).deb pool/restricted/n/nvidia-graphics-drivers-390/nvidia-dkms-390_$(dkms_nvidia_390_version)_$(arch).deb)
 	$(call build_dkms, $(bldinfo_pkg_name)-$*, $(pkgdir_bldinfo)/usr/lib/linux/$(abi_release)-$*/signatures, "", nvidia-435, pool/restricted/n/nvidia-graphics-drivers-435/nvidia-kernel-source-435_$(dkms_nvidia_435_version)_$(arch).deb pool/restricted/n/nvidia-graphics-drivers-435/nvidia-dkms-435_$(dkms_nvidia_435_version)_$(arch).deb)
-	$(call build_dkms, $(bldinfo_pkg_name)-$*, $(pkgdir_bldinfo)/usr/lib/linux/$(abi_release)-$*/signatures, "", nvidia-440, pool/restricted/n/nvidia-graphics-drivers-440/nvidia-kernel-source-440_$(dkms_nvidia_440_version)_$(arch).deb pool/restricted/n/nvidia-graphics-drivers-440/nvidia-dkms-440_$(dkms_nvidia_440_version)_$(arch).deb)
+	$(call build_dkms, $(bldinfo_pkg_name)-$*, $(pkgdir_bldinfo)/usr/lib/linux/$(abi_release)-$*/signatures, "", nvidia-450, pool/restricted/n/nvidia-graphics-drivers-450/nvidia-kernel-source-450_$(dkms_nvidia_450_version)_$(arch).deb pool/restricted/n/nvidia-graphics-drivers-450/nvidia-dkms-450_$(dkms_nvidia_450_version)_$(arch).deb)
 endif
 
 ifeq ($(do_dkms_nvidia_server),true)
 	$(call build_dkms, $(bldinfo_pkg_name)-$*, $(pkgdir_bldinfo)/usr/lib/linux/$(abi_release)-$*/signatures, "", nvidia-418srv, pool/restricted/n/nvidia-graphics-drivers-418-server/nvidia-kernel-source-418-server_$(dkms_nvidia_418_server_version)_$(arch).deb pool/restricted/n/nvidia-graphics-drivers-418-server/nvidia-dkms-418-server_$(dkms_nvidia_418_server_version)_$(arch).deb)
 	$(call build_dkms, $(bldinfo_pkg_name)-$*, $(pkgdir_bldinfo)/usr/lib/linux/$(abi_release)-$*/signatures, "", nvidia-440srv, pool/restricted/n/nvidia-graphics-drivers-440-server/nvidia-kernel-source-440-server_$(dkms_nvidia_440_server_version)_$(arch).deb pool/restricted/n/nvidia-graphics-drivers-440-server/nvidia-dkms-440-server_$(dkms_nvidia_440_server_version)_$(arch).deb)
-endif
-
-ifeq ($(do_extras_package),true)
-	$(if $(filter true,$(do_dkms_vbox)),$(call build_dkms, $(mods_pkg_name)-$*, $(pkgdir)/lib/modules/$(abi_release)-$*/kernel, "", virtualbox-guest, pool/multiverse/v/virtualbox/virtualbox-guest-dkms_$(dkms_vbox_guest_version)_all.deb))
+	$(call build_dkms, $(bldinfo_pkg_name)-$*, $(pkgdir_bldinfo)/usr/lib/linux/$(abi_release)-$*/signatures, "", nvidia-450srv, pool/restricted/n/nvidia-graphics-drivers-450-server/nvidia-kernel-source-450-server_$(dkms_nvidia_450_server_version)_$(arch).deb pool/restricted/n/nvidia-graphics-drivers-450-server/nvidia-dkms-450-server_$(dkms_nvidia_450_server_version)_$(arch).deb)
 endif
 
 ifneq ($(skipdbg),true)
@@ -572,7 +567,6 @@ binary-%: dbgpkgdir = $(CURDIR)/debian/$(bin_pkg_name)-$*-dbgsym
 binary-%: pkgtools = $(tools_flavour_pkg_name)-$*
 binary-%: pkgcloud = $(cloud_flavour_pkg_name)-$*
 binary-%: rprovides = $(if $(filter true,$(call custom_override,do_zfs,$*)),spl-modules$(comma) spl-dkms$(comma) zfs-modules$(comma) zfs-dkms$(comma))
-binary-%: rprovides += $(if $(filter true,$(call custom_override,do_dkms_vbox,$*)),virtualbox-guest-dkms$(comma))
 binary-%: target_flavour = $*
 binary-%: checks-%
 	@echo Debug: $@
@@ -691,7 +685,7 @@ ifeq ($(do_tools_perf),true)
 	cd $(builddirpa) && $(kmake) syncconfig
 	cd $(builddirpa) && $(kmake) prepare
 	cd $(builddirpa)/tools/perf && \
-		$(kmake) prefix=/usr HAVE_NO_LIBBFD=1 HAVE_CPLUS_DEMANGLE_SUPPORT=1 CROSS_COMPILE=$(CROSS_COMPILE) NO_LIBPYTHON=1 NO_LIBPERL=1
+		$(kmake) prefix=/usr HAVE_NO_LIBBFD=1 HAVE_CPLUS_DEMANGLE_SUPPORT=1 CROSS_COMPILE=$(CROSS_COMPILE) NO_LIBPYTHON=1 NO_LIBPERL=1 WERROR=0
 endif
 ifeq ($(do_tools_bpftool),true)
 	$(kmake) CROSS_COMPILE=$(CROSS_COMPILE) -C $(builddirpa)/tools/bpf/bpftool

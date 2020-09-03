@@ -157,7 +157,7 @@ do_doc_package=true
 else
 do_doc_package=false
 endif
-do_doc_package_content=true
+do_doc_package_content=false
 ifeq ($(full_build),false)
 do_doc_package_content=false
 endif
@@ -245,6 +245,8 @@ endif
 
 conc_level		= -j$(CONCURRENCY_LEVEL)
 
+PYTHON ?= $(firstword $(wildcard /usr/bin/python3) $(wildcard /usr/bin/python2) $(wildcard /usr/bin/python))
+
 # target_flavour is filled in for each step
 kmake = make ARCH=$(build_arch) \
 	CROSS_COMPILE=$(CROSS_COMPILE) \
@@ -252,7 +254,8 @@ kmake = make ARCH=$(build_arch) \
 	CONFIG_DEBUG_SECTION_MISMATCH=y \
 	KBUILD_BUILD_VERSION="$(uploadnum)" \
 	LOCALVERSION= localver-extra= \
-	CFLAGS_MODULE="-DPKG_ABI=$(abinum)"
+	CFLAGS_MODULE="-DPKG_ABI=$(abinum)" \
+	PYTHON=$(PYTHON)
 ifneq ($(LOCAL_ENV_CC),)
 kmake += CC="$(LOCAL_ENV_CC)" DISTCC_HOSTS="$(LOCAL_ENV_DISTCC_HOSTS)"
 endif

@@ -311,6 +311,40 @@ static const struct bcm2835_codec_fmt supported_formats[] = {
 		.size_multiplier_x2	= 2,
 		.is_bayer		= true,
 	}, {
+		/* 14 bit */
+		.fourcc			= V4L2_PIX_FMT_SRGGB14P,
+		.depth			= 14,
+		.bytesperline_align	= 32,
+		.flags			= 0,
+		.mmal_fmt		= MMAL_ENCODING_BAYER_SRGGB14P,
+		.size_multiplier_x2	= 2,
+		.is_bayer		= true,
+	}, {
+		.fourcc			= V4L2_PIX_FMT_SBGGR14P,
+		.depth			= 14,
+		.bytesperline_align	= 32,
+		.flags			= 0,
+		.mmal_fmt		= MMAL_ENCODING_BAYER_SBGGR14P,
+		.size_multiplier_x2	= 2,
+		.is_bayer		= true,
+
+	}, {
+		.fourcc			= V4L2_PIX_FMT_SGRBG14P,
+		.depth			= 14,
+		.bytesperline_align	= 32,
+		.flags			= 0,
+		.mmal_fmt		= MMAL_ENCODING_BAYER_SGRBG14P,
+		.size_multiplier_x2	= 2,
+		.is_bayer		= true,
+	}, {
+		.fourcc			= V4L2_PIX_FMT_SGBRG14P,
+		.depth			= 14,
+		.bytesperline_align	= 32,
+		.flags			= 0,
+		.mmal_fmt		= MMAL_ENCODING_BAYER_SGBRG14P,
+		.size_multiplier_x2	= 2,
+		.is_bayer		= true,
+	}, {
 		/* 16 bit */
 		.fourcc			= V4L2_PIX_FMT_SRGGB16,
 		.depth			= 16,
@@ -343,6 +377,47 @@ static const struct bcm2835_codec_fmt supported_formats[] = {
 		.mmal_fmt		= MMAL_ENCODING_BAYER_SGBRG16,
 		.size_multiplier_x2	= 2,
 		.is_bayer		= true,
+	}, {
+		/* Monochrome MIPI formats */
+		/* 8 bit */
+		.fourcc			= V4L2_PIX_FMT_GREY,
+		.depth			= 8,
+		.bytesperline_align	= 32,
+		.flags			= 0,
+		.mmal_fmt		= MMAL_ENCODING_GREY,
+		.size_multiplier_x2	= 2,
+	}, {
+		/* 10 bit */
+		.fourcc			= V4L2_PIX_FMT_Y10P,
+		.depth			= 10,
+		.bytesperline_align	= 32,
+		.flags			= 0,
+		.mmal_fmt		= MMAL_ENCODING_Y10P,
+		.size_multiplier_x2	= 2,
+	}, {
+		/* 12 bit */
+		.fourcc			= V4L2_PIX_FMT_Y12P,
+		.depth			= 12,
+		.bytesperline_align	= 32,
+		.flags			= 0,
+		.mmal_fmt		= MMAL_ENCODING_Y12P,
+		.size_multiplier_x2	= 2,
+	}, {
+		/* 14 bit */
+		.fourcc			= V4L2_PIX_FMT_Y14P,
+		.depth			= 14,
+		.bytesperline_align	= 32,
+		.flags			= 0,
+		.mmal_fmt		= MMAL_ENCODING_Y14P,
+		.size_multiplier_x2	= 2,
+	}, {
+		/* 16 bit */
+		.fourcc			= V4L2_PIX_FMT_Y16,
+		.depth			= 16,
+		.bytesperline_align	= 32,
+		.flags			= 0,
+		.mmal_fmt		= MMAL_ENCODING_Y16,
+		.size_multiplier_x2	= 2,
 	}, {
 		/* Compressed formats */
 		.fourcc			= V4L2_PIX_FMT_H264,
@@ -2569,10 +2644,10 @@ static const struct v4l2_m2m_ops m2m_ops = {
 
 /* Size of the array to provide to the VPU when asking for the list of supported
  * formats.
- * The ISP component currently advertises 33 input formats, so add a small
+ * The ISP component currently advertises 44 input formats, so add a small
  * overhead on that.
  */
-#define MAX_SUPPORTED_ENCODINGS 40
+#define MAX_SUPPORTED_ENCODINGS 50
 
 /* Populate dev->supported_fmts with the formats supported by those ports. */
 static int bcm2835_codec_get_supported_fmts(struct bcm2835_codec_dev *dev)
@@ -2755,7 +2830,7 @@ static int bcm2835_codec_create(struct bcm2835_codec_driver *drv,
 		goto unreg_dev;
 	}
 
-	ret = video_register_device(vfd, VFL_TYPE_GRABBER, video_nr);
+	ret = video_register_device(vfd, VFL_TYPE_VIDEO, video_nr);
 	if (ret) {
 		v4l2_err(&dev->v4l2_dev, "Failed to register video device\n");
 		goto unreg_dev;

@@ -106,6 +106,10 @@ static int rxe_modify_device(struct ib_device *dev,
 {
 	struct rxe_dev *rxe = to_rdev(dev);
 
+	if (mask & ~(IB_DEVICE_MODIFY_SYS_IMAGE_GUID |
+		     IB_DEVICE_MODIFY_NODE_DESC))
+		return -EOPNOTSUPP;
+
 	if (mask & IB_DEVICE_MODIFY_SYS_IMAGE_GUID)
 		rxe->attr.sys_image_guid = cpu_to_be64(attr->sys_image_guid);
 
@@ -191,15 +195,16 @@ static void rxe_dealloc_pd(struct ib_pd *ibpd, struct ib_udata *udata)
 	rxe_drop_ref(pd);
 }
 
-static int rxe_create_ah(struct ib_ah *ibah, struct rdma_ah_attr *attr,
-			 u32 flags, struct ib_udata *udata)
+static int rxe_create_ah(struct ib_ah *ibah,
+			 struct rdma_ah_init_attr *init_attr,
+			 struct ib_udata *udata)
 
 {
 	int err;
 	struct rxe_dev *rxe = to_rdev(ibah->device);
 	struct rxe_ah *ah = to_rah(ibah);
 
-	err = rxe_av_chk_attr(rxe, attr);
+	err = rxe_av_chk_attr(rxe, init_attr->ah_attr);
 	if (err)
 		return err;
 
@@ -207,7 +212,7 @@ static int rxe_create_ah(struct ib_ah *ibah, struct rdma_ah_attr *attr,
 	if (err)
 		return err;
 
-	rxe_init_av(attr, &ah->av);
+	rxe_init_av(init_attr->ah_attr, &ah->av);
 	return 0;
 }
 
@@ -679,6 +684,7 @@ static int rxe_post_send_kernel(struct rxe_qp *qp, const struct ib_send_wr *wr,
 	unsigned int mask;
 	unsigned int length = 0;
 	int i;
+	struct ib_send_wr *next;
 
 	while (wr) {
 		mask = wr_opcode_mask(wr->opcode, qp);
@@ -695,6 +701,8 @@ static int rxe_post_send_kernel(struct rxe_qp *qp, const struct ib_send_wr *wr,
 			break;
 		}
 
+		next = wr->next;
+
 		length = 0;
 		for (i = 0; i < wr->num_sge; i++)
 			length += wr->sg_list[i].length;
@@ -705,7 +713,7 @@ static int rxe_post_send_kernel(struct rxe_qp *qp, const struct ib_send_wr *wr,
 			*bad_wr = wr;
 			break;
 		}
-		wr = wr->next;
+		wr = next;
 	}
 
 	rxe_run_task(&qp->req.task, 1);
@@ -1171,6 +1179,9 @@ int rxe_register_device(struct rxe_dev *rxe, const char *ibdev_name)
 	addrconf_addr_eui48((unsigned char *)&dev->node_guid,
 			    rxe->ndev->dev_addr);
 	dev->dev.dma_ops = &dma_virt_ops;
+	dev->dev.dma_parms = &rxe->dma_parms;
+	rxe->dma_parms = (struct device_dma_parameters)
+		{ .max_segment_size = SZ_2G };
 	dma_coerce_mask_and_coherent(&dev->dev,
 				     dma_get_required_mask(&dev->dev));
 

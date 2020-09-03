@@ -295,7 +295,7 @@ static void bcm2835_mmc_reset(struct bcm2835_host *host, u8 mask)
 
 	if (100-timeout > 10 && 100-timeout > host->max_delay) {
 		host->max_delay = 100-timeout;
-		pr_warning("Warning: MMC controller hung for %d ms\n", host->max_delay);
+		pr_warn("Warning: MMC controller hung for %d ms\n", host->max_delay);
 	}
 	spin_unlock_irqrestore(&host->lock, flags);
 }
@@ -687,7 +687,7 @@ void bcm2835_mmc_send_command(struct bcm2835_host *host, struct mmc_command *cmd
 
 	if ((1000-timeout)/100 > 1 && (1000-timeout)/100 > host->max_delay) {
 		host->max_delay = (1000-timeout)/100;
-		pr_warning("Warning: MMC controller hung for %d ms\n", host->max_delay);
+		pr_warn("Warning: MMC controller hung for %d ms\n", host->max_delay);
 	}
 
 	timeout = jiffies;
@@ -1124,7 +1124,7 @@ void bcm2835_mmc_set_clock(struct bcm2835_host *host, unsigned int clock)
 
 	if (20-timeout > 10 && 20-timeout > host->max_delay) {
 		host->max_delay = 20-timeout;
-		pr_warning("Warning: MMC controller hung for %d ms\n", host->max_delay);
+		pr_warn("Warning: MMC controller hung for %d ms\n", host->max_delay);
 	}
 
 	clk |= SDHCI_CLOCK_CARD_EN;
@@ -1299,7 +1299,7 @@ static int bcm2835_mmc_add_host(struct bcm2835_host *host)
 	mmc->max_busy_timeout = (1 << 27) / host->timeout_clk;
 
 	/* host controller capabilities */
-	mmc->caps |= MMC_CAP_CMD23 | MMC_CAP_ERASE | MMC_CAP_NEEDS_POLL |
+	mmc->caps |= MMC_CAP_CMD23 | MMC_CAP_NEEDS_POLL |
 		MMC_CAP_SDIO_IRQ | MMC_CAP_SD_HIGHSPEED |
 		MMC_CAP_MMC_HIGHSPEED;
 

@@ -9,6 +9,11 @@ snd-soc-cygnus-objs := cygnus-pcm.o cygnus-ssp.o
 
 obj-$(CONFIG_SND_SOC_CYGNUS) += snd-soc-cygnus.o
 
+# BCM63XX Platform Support
+snd-soc-63xx-objs := bcm63xx-i2s-whistler.o bcm63xx-pcm-whistler.o
+
+obj-$(CONFIG_SND_BCM63XX_I2S_WHISTLER) += snd-soc-63xx.o
+
 # Google voiceHAT custom codec support
 snd-soc-googlevoicehat-codec-objs := googlevoicehat-codec.o
 
@@ -53,7 +58,7 @@ obj-$(CONFIG_SND_BCM2708_SOC_RPI_CIRRUS) += snd-soc-rpi-cirrus.o
 obj-$(CONFIG_SND_BCM2708_SOC_RPI_PROTO) += snd-soc-rpi-proto.o
 obj-$(CONFIG_SND_BCM2708_SOC_IQAUDIO_CODEC) += snd-soc-iqaudio-codec.o
 obj-$(CONFIG_SND_BCM2708_SOC_IQAUDIO_DAC) += snd-soc-iqaudio-dac.o
- obj-$(CONFIG_SND_BCM2708_SOC_I_SABRE_Q2M) += snd-soc-i-sabre-q2m.o
+obj-$(CONFIG_SND_BCM2708_SOC_I_SABRE_Q2M) += snd-soc-i-sabre-q2m.o
 obj-$(CONFIG_SND_AUDIOINJECTOR_PI_SOUNDCARD) += snd-soc-audioinjector-pi-soundcard.o
 obj-$(CONFIG_SND_AUDIOINJECTOR_OCTO_SOUNDCARD) += snd-soc-audioinjector-octo-soundcard.o
 obj-$(CONFIG_SND_AUDIOINJECTOR_ISOLATED_SOUNDCARD) += snd-soc-audioinjector-isolated-soundcard.o

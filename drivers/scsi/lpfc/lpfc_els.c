@@ -3128,7 +3128,7 @@ lpfc_cmpl_els_disc_cmd(struct lpfc_hba *phba, struct lpfc_iocbq *cmdiocb,
 		for (i = 0; i < ELS_RDF_REG_TAG_CNT &&
 			    i < be32_to_cpu(prdf->reg_d1.reg_desc.count); i++)
 			lpfc_printf_vlog(vport, KERN_INFO, LOG_ELS,
-				 "4677 Fabric RDF Notication Grant Data: "
+				 "4677 Fabric RDF Notification Grant Data: "
 				 "0x%08x\n",
 				 be32_to_cpu(
 					prdf->reg_d1.desc_tags[i]));
@@ -7936,18 +7936,12 @@ lpfc_els_timeout_handler(struct lpfc_vport *vport)
 	if (unlikely(!pring))
 		return;
 
-	if ((phba->pport->load_flag & FC_UNLOADING))
+	if (phba->pport->load_flag & FC_UNLOADING)
 		return;
+
 	spin_lock_irq(&phba->hbalock);
 	if (phba->sli_rev == LPFC_SLI_REV4)
 		spin_lock(&pring->ring_lock);
-
-	if ((phba->pport->load_flag & FC_UNLOADING)) {
-		if (phba->sli_rev == LPFC_SLI_REV4)
-			spin_unlock(&pring->ring_lock);
-		spin_unlock_irq(&phba->hbalock);
-		return;
-	}
 
 	list_for_each_entry_safe(piocb, tmp_iocb, &pring->txcmplq, list) {
 		cmd = &piocb->iocb;

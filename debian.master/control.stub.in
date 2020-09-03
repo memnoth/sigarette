@@ -4,7 +4,7 @@ Priority: optional
 Maintainer: Ubuntu Kernel Team <kernel-team@lists.ubuntu.com>
 Standards-Version: 3.9.4.0
 Build-Depends:
- debhelper (>= 9),
+ debhelper-compat (= 10),
  dh-systemd,
  cpio,
  kernel-wedge,
@@ -38,6 +38,7 @@ Build-Depends:
  dkms <!stage1>,
  curl <!stage1>,
  lz4 [amd64 s390x] <!stage1>,
+ dwarves [amd64 arm64 armhf ppc64el s390x] <!stage1>,
 Build-Depends-Indep:
  xmlto <!stage1>,
  docbook-utils <!stage1>,
@@ -50,6 +51,13 @@ Build-Depends-Indep:
  python3-sphinx-rtd-theme <!stage1>,
  fontconfig <!stage1>,
  python3-docutils <!stage1>,
+ python3-venv <!stage1>,
+ imagemagick <!stage1>,
+ graphviz <!stage1>,
+ dvipng <!stage1>,
+ fonts-noto-cjk <!stage1>,
+ latexmk <!stage1>,
+ librsvg2-bin <!stage1>,
 Vcs-Git: git://git.launchpad.net/~ubuntu-kernel/ubuntu/+source/linux/+git/=SERIES=
 XS-Testsuite: autopkgtest
 #XS-Testsuite-Depends: gcc-4.7 binutils
@@ -97,8 +105,6 @@ Multi-Arch: foreign
 Section: kernel
 Priority: optional
 Depends: ${misc:Depends}, lsb-release
-Conflicts: linux-oem-5.6-tools-common
-Replaces: linux-oem-5.6-tools-common
 Description: Linux kernel version specific tools for version PKGVER
  This package provides the architecture independent parts for kernel
  version locked tools (such as perf and x86_energy_perf_policy) for
@@ -147,8 +153,6 @@ Multi-Arch: foreign
 Section: kernel
 Priority: optional
 Depends: ${misc:Depends}, python3
-Conflicts: linux-oem-5.6-tools-host
-Replaces: linux-oem-5.6-tools-host
 Description: Linux kernel VM host tools
  This package provides kernel tools useful for VM hosts.
 

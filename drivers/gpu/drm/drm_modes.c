@@ -233,7 +233,7 @@ struct drm_display_mode *drm_cvt_mode(struct drm_device *dev, int hdisplay,
 		/* 3) Nominal HSync width (% of line period) - default 8 */
 #define CVT_HSYNC_PERCENTAGE	8
 		unsigned int hblank_percentage;
-		int vsyncandback_porch, vback_porch, hblank;
+		int vsyncandback_porch, __maybe_unused vback_porch, hblank;
 
 		/* estimated the horizontal period */
 		tmp1 = HV_FACTOR * 1000000  -
@@ -386,9 +386,10 @@ drm_gtf_mode_complex(struct drm_device *dev, int hdisplay, int vdisplay,
 	int top_margin, bottom_margin;
 	int interlace;
 	unsigned int hfreq_est;
-	int vsync_plus_bp, vback_porch;
-	unsigned int vtotal_lines, vfieldrate_est, hperiod;
-	unsigned int vfield_rate, vframe_rate;
+	int vsync_plus_bp, __maybe_unused vback_porch;
+	unsigned int vtotal_lines, __maybe_unused vfieldrate_est;
+	unsigned int __maybe_unused hperiod;
+	unsigned int vfield_rate, __maybe_unused vframe_rate;
 	int left_margin, right_margin;
 	unsigned int total_active_pixels, ideal_duty_cycle;
 	unsigned int hblank, total_pixels, pixel_freq;
@@ -745,32 +746,6 @@ void drm_mode_set_name(struct drm_display_mode *mode)
 		 interlaced ? "i" : "");
 }
 EXPORT_SYMBOL(drm_mode_set_name);
-
-/**
- * drm_mode_hsync - get the hsync of a mode
- * @mode: mode
- *
- * Returns:
- * @modes's hsync rate in kHz, rounded to the nearest integer. Calculates the
- * value first if it is not yet set.
- */
-int drm_mode_hsync(const struct drm_display_mode *mode)
-{
-	unsigned int calc_val;
-
-	if (mode->hsync)
-		return mode->hsync;
-
-	if (mode->htotal <= 0)
-		return 0;
-
-	calc_val = (mode->clock * 1000) / mode->htotal; /* hsync in Hz */
-	calc_val += 500;				/* round to 1000Hz */
-	calc_val /= 1000;				/* truncate to kHz */
-
-	return calc_val;
-}
-EXPORT_SYMBOL(drm_mode_hsync);
 
 /**
  * drm_mode_vrefresh - get the vrefresh of a mode
@@ -1694,14 +1669,14 @@ static int drm_mode_parse_cmdline_options(const char *str,
 		option = sep + 1;
 	} while (sep);
 
+	if (rotation && freestanding)
+		return -EINVAL;
+
 	if (!(rotation & DRM_MODE_ROTATE_MASK))
 		rotation |= DRM_MODE_ROTATE_0;
 
 	/* Make sure there is exactly one rotation defined */
 	if (!is_power_of_2(rotation & DRM_MODE_ROTATE_MASK))
-		return -EINVAL;
-
-	if (rotation && freestanding)
 		return -EINVAL;
 
 	mode->rotation_reflection = rotation;

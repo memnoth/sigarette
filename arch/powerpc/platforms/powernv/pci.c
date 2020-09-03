@@ -814,35 +814,6 @@ struct iommu_table *pnv_pci_table_alloc(int nid)
 	return tbl;
 }
 
-void pnv_pci_dma_dev_setup(struct pci_dev *pdev)
-{
-	struct pci_controller *hose = pci_bus_to_host(pdev->bus);
-	struct pnv_phb *phb = hose->private_data;
-
-	if (phb && phb->dma_dev_setup)
-		phb->dma_dev_setup(phb, pdev);
-}
-
-void pnv_pci_dma_bus_setup(struct pci_bus *bus)
-{
-	struct pci_controller *hose = bus->sysdata;
-	struct pnv_phb *phb = hose->private_data;
-	struct pnv_ioda_pe *pe;
-
-	list_for_each_entry(pe, &phb->ioda.pe_list, list) {
-		if (!(pe->flags & (PNV_IODA_PE_BUS | PNV_IODA_PE_BUS_ALL)))
-			continue;
-
-		if (!pe->pbus)
-			continue;
-
-		if (bus->number == ((pe->rid >> 8) & 0xFF)) {
-			pe->pbus = bus;
-			break;
-		}
-	}
-}
-
 struct device_node *pnv_pci_get_phb_node(struct pci_dev *dev)
 {
 	struct pci_controller *hose = pci_bus_to_host(dev->bus);
@@ -984,28 +955,8 @@ static int pnv_tce_iommu_bus_notifier(struct notifier_block *nb,
 		unsigned long action, void *data)
 {
 	struct device *dev = data;
-	struct pci_dev *pdev;
-	struct pci_dn *pdn;
-	struct pnv_ioda_pe *pe;
-	struct pci_controller *hose;
-	struct pnv_phb *phb;
 
 	switch (action) {
-	case BUS_NOTIFY_ADD_DEVICE:
-		pdev = to_pci_dev(dev);
-		pdn = pci_get_pdn(pdev);
-		hose = pci_bus_to_host(pdev->bus);
-		phb = hose->private_data;
-
-		WARN_ON_ONCE(!phb);
-		if (!pdn || pdn->pe_number == IODA_INVALID_PE || !phb)
-			return 0;
-
-		pe = &phb->ioda.pe_array[pdn->pe_number];
-		if (!pe->table_group.group)
-			return 0;
-		iommu_add_device(&pe->table_group, dev);
-		return 0;
 	case BUS_NOTIFY_DEL_DEVICE:
 		iommu_del_device(dev);
 		return 0;

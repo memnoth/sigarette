@@ -85,6 +85,7 @@ dtbo-$(CONFIG_ARCH_BCM2835) += \
 	i2s-gpio28-31.dtbo \
 	ilitek251x.dtbo \
 	imx219.dtbo \
+	imx290.dtbo \
 	imx477.dtbo \
 	iqaudio-codec.dtbo \
 	iqaudio-dac.dtbo \
@@ -114,6 +115,8 @@ dtbo-$(CONFIG_ARCH_BCM2835) += \
 	mpu6050.dtbo \
 	mz61581.dtbo \
 	ov5647.dtbo \
+	ov7251.dtbo \
+	ov9281.dtbo \
 	papirus.dtbo \
 	pibell.dtbo \
 	piglow.dtbo \

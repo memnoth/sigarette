@@ -201,14 +201,12 @@ static void config_acp_dma(struct pdm_stream_instance *rtd, int direction)
 	}
 }
 
-static int acp_pdm_dma_open(struct snd_pcm_substream *substream)
+static int acp_pdm_dma_open(struct snd_soc_component *component,
+			    struct snd_pcm_substream *substream)
 {
 	struct snd_pcm_runtime *runtime;
 	struct pdm_dev_data *adata;
 	struct pdm_stream_instance *pdm_data;
-	struct snd_soc_pcm_runtime *prtd = substream->private_data;
-	struct snd_soc_component *component = snd_soc_rtdcom_lookup(prtd,
-								    DRV_NAME);
 	int ret;
 
 	runtime = substream->runtime;
@@ -238,34 +236,24 @@ static int acp_pdm_dma_open(struct snd_pcm_substream *substream)
 	return ret;
 }
 
-static int acp_pdm_dma_hw_params(struct snd_pcm_substream *substream,
+static int acp_pdm_dma_hw_params(struct snd_soc_component *component,
+				 struct snd_pcm_substream *substream,
 				 struct snd_pcm_hw_params *params)
 {
 	struct pdm_stream_instance *rtd;
 	size_t size, period_bytes;
-	int status;
 
 	rtd = substream->runtime->private_data;
 	if (!rtd)
 		return -EINVAL;
-
 	size = params_buffer_bytes(params);
 	period_bytes = params_period_bytes(params);
-	status = snd_pcm_lib_malloc_pages(substream, size);
-	if (status < 0)
-		return status;
-	memset(substream->runtime->dma_area, 0, params_buffer_bytes(params));
-	if (substream->dma_buffer.area) {
-		rtd->dma_addr = substream->dma_buffer.addr;
-		rtd->num_pages = (PAGE_ALIGN(size) >> PAGE_SHIFT);
-		config_acp_dma(rtd, substream->stream);
-		init_pdm_ring_buffer(MEM_WINDOW_START, size, period_bytes,
-				     rtd->acp_base);
-		status = 0;
-	} else
-		status = -ENOMEM;
-
-	return status;
+	rtd->dma_addr = substream->dma_buffer.addr;
+	rtd->num_pages = (PAGE_ALIGN(size) >> PAGE_SHIFT);
+	config_acp_dma(rtd, substream->stream);
+	init_pdm_ring_buffer(MEM_WINDOW_START, size, period_bytes,
+			     rtd->acp_base);
+	return 0;
 }
 
 static u64 acp_pdm_get_byte_count(struct pdm_stream_instance *rtd,
@@ -282,7 +270,8 @@ static u64 acp_pdm_get_byte_count(struct pdm_stream_instance *rtd,
 	return byte_count.bytescount;
 }
 
-static snd_pcm_uframes_t acp_pdm_dma_pointer(struct snd_pcm_substream *stream)
+static snd_pcm_uframes_t acp_pdm_dma_pointer(struct snd_soc_component *comp,
+					     struct snd_pcm_substream *stream)
 {
 	struct pdm_stream_instance *rtd;
 	u32 pos, buffersize;
@@ -298,39 +287,31 @@ static snd_pcm_uframes_t acp_pdm_dma_pointer(struct snd_pcm_substream *stream)
 	return bytes_to_frames(stream->runtime, pos);
 }
 
-static int acp_pdm_dma_new(struct snd_soc_pcm_runtime *rtd)
+static int acp_pdm_dma_new(struct snd_soc_component *component,
+			   struct snd_soc_pcm_runtime *rtd)
 {
-	struct snd_soc_component *component = snd_soc_rtdcom_lookup(rtd,
-								    DRV_NAME);
 	struct device *parent = component->dev->parent;
 
-	snd_pcm_lib_preallocate_pages_for_all(rtd->pcm, SNDRV_DMA_TYPE_DEV,
+	snd_pcm_set_managed_buffer_all(rtd->pcm, SNDRV_DMA_TYPE_DEV,
 				       parent, MIN_BUFFER, MAX_BUFFER);
-
 	return 0;
 }
 
-static int acp_pdm_dma_mmap(struct snd_pcm_substream *substream,
+static int acp_pdm_dma_mmap(struct snd_soc_component *component,
+			    struct snd_pcm_substream *substream,
 			    struct vm_area_struct *vma)
 {
 	return snd_pcm_lib_default_mmap(substream, vma);
 }
 
-static int acp_pdm_dma_close(struct snd_pcm_substream *substream)
+static int acp_pdm_dma_close(struct snd_soc_component *component,
+			     struct snd_pcm_substream *substream)
 {
-	struct snd_soc_pcm_runtime *prtd = substream->private_data;
-	struct snd_soc_component *component = snd_soc_rtdcom_lookup(prtd,
-								    DRV_NAME);
 	struct pdm_dev_data *adata = dev_get_drvdata(component->dev);
 
 	disable_pdm_interrupts(adata->acp_base);
 	adata->capture_stream = NULL;
 	return 0;
-}
-
-static int acp_pdm_dma_hw_free(struct snd_pcm_substream *substream)
-{
-	return snd_pcm_lib_free_pages(substream);
 }
 
 static int acp_pdm_dai_trigger(struct snd_pcm_substream *substream,
@@ -394,20 +375,14 @@ static struct snd_soc_dai_driver acp_pdm_dai_driver = {
 	.ops = &acp_pdm_dai_ops,
 };
 
-static const struct snd_pcm_ops acp_pdm_ops = {
+static const struct snd_soc_component_driver acp_pdm_component = {
+	.name		= DRV_NAME,
 	.open		= acp_pdm_dma_open,
 	.close		= acp_pdm_dma_close,
 	.hw_params	= acp_pdm_dma_hw_params,
-	.hw_free 	= acp_pdm_dma_hw_free,
 	.pointer	= acp_pdm_dma_pointer,
 	.mmap		= acp_pdm_dma_mmap,
-};
-
-static const struct snd_soc_component_driver acp_pdm_component = {
-	.name		= DRV_NAME,
-	.ops = 		&acp_pdm_ops,
-	.pcm_new	= acp_pdm_dma_new,
-
+	.pcm_construct	= acp_pdm_dma_new,
 };
 
 static int acp_pdm_audio_probe(struct platform_device *pdev)

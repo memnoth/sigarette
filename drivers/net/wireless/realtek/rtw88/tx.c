@@ -58,12 +58,9 @@ void rtw_tx_fill_tx_desc(struct rtw_tx_pkt_info *pkt_info, struct sk_buff *skb)
 	SET_TX_DESC_SPE_RPT(txdesc, pkt_info->report);
 	SET_TX_DESC_SW_DEFINE(txdesc, pkt_info->sn);
 	SET_TX_DESC_USE_RTS(txdesc, pkt_info->rts);
-	SET_TX_DESC_NAVUSEHDR(txdesc, pkt_info->nav_use_hdr);
 	SET_TX_DESC_DISQSELSEQ(txdesc, pkt_info->dis_qselseq);
 	SET_TX_DESC_EN_HWSEQ(txdesc, pkt_info->en_hwseq);
-	SET_TX_DESC_EN_HWEXSEQ(txdesc, pkt_info->en_hw_exseq);
 	SET_TX_DESC_HW_SSN_SEL(txdesc, pkt_info->hw_ssn_sel);
-	SET_TX_DESC_BT_NULL(txdesc, pkt_info->bt_null);
 }
 EXPORT_SYMBOL(rtw_tx_fill_tx_desc);
 
@@ -230,68 +227,24 @@ void rtw_tx_report_handle(struct rtw_dev *rtwdev, struct sk_buff *skb, int src)
 	spin_unlock_irqrestore(&tx_report->q_lock, flags);
 }
 
-static void rtw_tx_pkt_info_update_rate(struct rtw_dev *rtwdev,
-					struct rtw_tx_pkt_info *pkt_info,
-					struct sk_buff *skb)
-{
-	if (rtwdev->hal.current_band_type == RTW_BAND_2G) {
-		pkt_info->rate_id = RTW_RATEID_B_20M;
-		pkt_info->rate = DESC_RATE1M;
-	} else {
-		pkt_info->rate_id = RTW_RATEID_G;
-		pkt_info->rate = DESC_RATE6M;
-	}
-
-	pkt_info->use_rate = true;
-	pkt_info->dis_rate_fallback = true;
-}
-
-static void rtw_tx_pkt_info_update_sec(struct rtw_dev *rtwdev,
-				       struct rtw_tx_pkt_info *pkt_info,
-				       struct sk_buff *skb)
-{
-	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
-	u8 sec_type = 0;
-
-	if (info && info->control.hw_key) {
-		struct ieee80211_key_conf *key = info->control.hw_key;
-
-		switch (key->cipher) {
-		case WLAN_CIPHER_SUITE_WEP40:
-		case WLAN_CIPHER_SUITE_WEP104:
-		case WLAN_CIPHER_SUITE_TKIP:
-			sec_type = 0x01;
-			break;
-		case WLAN_CIPHER_SUITE_CCMP:
-			sec_type = 0x03;
-			break;
-		default:
-			break;
-		}
-	}
-
-	pkt_info->sec_type = sec_type;
-}
-
 static void rtw_tx_mgmt_pkt_info_update(struct rtw_dev *rtwdev,
 					struct rtw_tx_pkt_info *pkt_info,
-					struct ieee80211_tx_control *control,
+					struct ieee80211_sta *sta,
 					struct sk_buff *skb)
 {
-	rtw_tx_pkt_info_update_rate(rtwdev, pkt_info, skb);
+	pkt_info->use_rate = true;
+	pkt_info->rate_id = 6;
+	pkt_info->dis_rate_fallback = true;
 	pkt_info->dis_qselseq = true;
 	pkt_info->en_hwseq = true;
 	pkt_info->hw_ssn_sel = 0;
-	pkt_info->en_hw_exseq = false;
-	/* TODO: need to change hw port and hw ssn sel for multiple vifs */
 }
 
 static void rtw_tx_data_pkt_info_update(struct rtw_dev *rtwdev,
 					struct rtw_tx_pkt_info *pkt_info,
-					struct ieee80211_tx_control *control,
+					struct ieee80211_sta *sta,
 					struct sk_buff *skb)
 {
-	struct ieee80211_sta *sta = control->sta;
 	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
 	struct rtw_sta_info *si;
@@ -350,7 +303,7 @@ out:
 
 void rtw_tx_pkt_info_update(struct rtw_dev *rtwdev,
 			    struct rtw_tx_pkt_info *pkt_info,
-			    struct ieee80211_tx_control *control,
+			    struct ieee80211_sta *sta,
 			    struct sk_buff *skb)
 {
 	struct rtw_chip_info *chip = rtwdev->chip;
@@ -359,17 +312,35 @@ void rtw_tx_pkt_info_update(struct rtw_dev *rtwdev,
 	struct rtw_sta_info *si;
 	struct ieee80211_vif *vif = NULL;
 	__le16 fc = hdr->frame_control;
+	u8 sec_type = 0;
 	bool bmc;
 
-	if (control->sta) {
-		si = (struct rtw_sta_info *)control->sta->drv_priv;
+	if (sta) {
+		si = (struct rtw_sta_info *)sta->drv_priv;
 		vif = si->vif;
 	}
 
 	if (ieee80211_is_mgmt(fc) || ieee80211_is_nullfunc(fc))
-		rtw_tx_mgmt_pkt_info_update(rtwdev, pkt_info, control, skb);
+		rtw_tx_mgmt_pkt_info_update(rtwdev, pkt_info, sta, skb);
 	else if (ieee80211_is_data(fc))
-		rtw_tx_data_pkt_info_update(rtwdev, pkt_info, control, skb);
+		rtw_tx_data_pkt_info_update(rtwdev, pkt_info, sta, skb);
+
+	if (info->control.hw_key) {
+		struct ieee80211_key_conf *key = info->control.hw_key;
+
+		switch (key->cipher) {
+		case WLAN_CIPHER_SUITE_WEP40:
+		case WLAN_CIPHER_SUITE_WEP104:
+		case WLAN_CIPHER_SUITE_TKIP:
+			sec_type = 0x01;
+			break;
+		case WLAN_CIPHER_SUITE_CCMP:
+			sec_type = 0x03;
+			break;
+		default:
+			break;
+		}
+	}
 
 	bmc = is_broadcast_ether_addr(hdr->addr1) ||
 	      is_multicast_ether_addr(hdr->addr1);
@@ -378,7 +349,7 @@ void rtw_tx_pkt_info_update(struct rtw_dev *rtwdev,
 		rtw_tx_report_enable(rtwdev, pkt_info);
 
 	pkt_info->bmc = bmc;
-	rtw_tx_pkt_info_update_sec(rtwdev, pkt_info, skb);
+	pkt_info->sec_type = sec_type;
 	pkt_info->tx_pkt_size = skb->len;
 	pkt_info->offset = chip->tx_pkt_desc_sz;
 	pkt_info->qsel = skb->priority;
@@ -388,43 +359,24 @@ void rtw_tx_pkt_info_update(struct rtw_dev *rtwdev,
 	rtw_tx_stats(rtwdev, vif, skb);
 }
 
-void rtw_tx_rsvd_page_pkt_info_update(struct rtw_dev *rtwdev,
-				      struct rtw_tx_pkt_info *pkt_info,
-				      struct sk_buff *skb,
-				      enum rtw_rsvd_packet_type type)
+void rtw_rsvd_page_pkt_info_update(struct rtw_dev *rtwdev,
+				   struct rtw_tx_pkt_info *pkt_info,
+				   struct sk_buff *skb)
 {
 	struct rtw_chip_info *chip = rtwdev->chip;
 	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
 	bool bmc;
 
-	/* A beacon or dummy reserved page packet indicates that it is the first
-	 * reserved page, and the qsel of it will be set in each hci.
-	 */
-	if (type != RSVD_BEACON && type != RSVD_DUMMY)
-		pkt_info->qsel = TX_DESC_QSEL_MGMT;
-
-	rtw_tx_pkt_info_update_rate(rtwdev, pkt_info, skb);
-
 	bmc = is_broadcast_ether_addr(hdr->addr1) ||
 	      is_multicast_ether_addr(hdr->addr1);
+	pkt_info->use_rate = true;
+	pkt_info->rate_id = 6;
+	pkt_info->dis_rate_fallback = true;
 	pkt_info->bmc = bmc;
 	pkt_info->tx_pkt_size = skb->len;
 	pkt_info->offset = chip->tx_pkt_desc_sz;
+	pkt_info->qsel = TX_DESC_QSEL_MGMT;
 	pkt_info->ls = true;
-	if (type == RSVD_PS_POLL) {
-		pkt_info->nav_use_hdr = true;
-	} else {
-		pkt_info->dis_qselseq = true;
-		pkt_info->en_hwseq = true;
-		pkt_info->hw_ssn_sel = 0;
-		pkt_info->en_hw_exseq = false;
-	}
-	if (type == RSVD_QOS_NULL)
-		pkt_info->bt_null = true;
-
-	rtw_tx_pkt_info_update_sec(rtwdev, pkt_info, skb);
-
-	/* TODO: need to change hw port and hw ssn sel for multiple vifs */
 }
 
 struct sk_buff *
@@ -447,7 +399,8 @@ rtw_tx_write_data_rsvd_page_get(struct rtw_dev *rtwdev,
 
 	skb_reserve(skb, tx_pkt_desc_sz);
 	skb_put_data(skb, buf, size);
-	rtw_tx_rsvd_page_pkt_info_update(rtwdev, pkt_info, skb, RSVD_BEACON);
+	pkt_info->tx_pkt_size = size;
+	pkt_info->offset = tx_pkt_desc_sz;
 
 	return skb;
 }
@@ -484,10 +437,16 @@ void rtw_tx(struct rtw_dev *rtwdev,
 	    struct sk_buff *skb)
 {
 	struct rtw_tx_pkt_info pkt_info = {0};
+	int ret;
 
-	rtw_tx_pkt_info_update(rtwdev, &pkt_info, control, skb);
-	if (rtw_hci_tx(rtwdev, &pkt_info, skb))
+	rtw_tx_pkt_info_update(rtwdev, &pkt_info, control->sta, skb);
+	ret = rtw_hci_tx_write(rtwdev, &pkt_info, skb);
+	if (ret) {
+		rtw_err(rtwdev, "failed to write TX skb to HCI\n");
 		goto out;
+	}
+
+	rtw_hci_tx_kick_off(rtwdev);
 
 	return;
 
@@ -527,37 +486,61 @@ static void rtw_txq_check_agg(struct rtw_dev *rtwdev,
 	ieee80211_queue_work(rtwdev->hw, &rtwdev->ba_work);
 }
 
-static bool rtw_txq_dequeue(struct rtw_dev *rtwdev,
-			    struct rtw_txq *rtwtxq)
+static int rtw_txq_push_skb(struct rtw_dev *rtwdev,
+			    struct rtw_txq *rtwtxq,
+			    struct sk_buff *skb)
 {
 	struct ieee80211_txq *txq = rtwtxq_to_txq(rtwtxq);
-	struct ieee80211_tx_control control;
+	struct rtw_tx_pkt_info pkt_info = {0};
+	int ret;
+
+	rtw_txq_check_agg(rtwdev, rtwtxq, skb);
+
+	rtw_tx_pkt_info_update(rtwdev, &pkt_info, txq->sta, skb);
+	ret = rtw_hci_tx_write(rtwdev, &pkt_info, skb);
+	if (ret) {
+		rtw_err(rtwdev, "failed to write TX skb to HCI\n");
+		return ret;
+	}
+	rtwtxq->last_push = jiffies;
+
+	return 0;
+}
+
+static struct sk_buff *rtw_txq_dequeue(struct rtw_dev *rtwdev,
+				       struct rtw_txq *rtwtxq)
+{
+	struct ieee80211_txq *txq = rtwtxq_to_txq(rtwtxq);
 	struct sk_buff *skb;
 
 	skb = ieee80211_tx_dequeue(rtwdev->hw, txq);
 	if (!skb)
-		return false;
+		return NULL;
 
-	rtw_txq_check_agg(rtwdev, rtwtxq, skb);
-
-	control.sta = txq->sta;
-	rtw_tx(rtwdev, &control, skb);
-	rtwtxq->last_push = jiffies;
-
-	return true;
+	return skb;
 }
 
 static void rtw_txq_push(struct rtw_dev *rtwdev,
 			 struct rtw_txq *rtwtxq,
 			 unsigned long frames)
 {
+	struct sk_buff *skb;
+	int ret;
 	int i;
 
 	rcu_read_lock();
 
-	for (i = 0; i < frames; i++)
-		if (!rtw_txq_dequeue(rtwdev, rtwtxq))
+	for (i = 0; i < frames; i++) {
+		skb = rtw_txq_dequeue(rtwdev, rtwtxq);
+		if (!skb)
 			break;
+
+		ret = rtw_txq_push_skb(rtwdev, rtwtxq, skb);
+		if (ret) {
+			rtw_err(rtwdev, "failed to pusk skb, ret %d\n", ret);
+			break;
+		}
+	}
 
 	rcu_read_unlock();
 }
@@ -579,6 +562,8 @@ void rtw_tx_tasklet(unsigned long data)
 
 		list_del_init(&rtwtxq->list);
 	}
+
+	rtw_hci_tx_kick_off(rtwdev);
 
 	spin_unlock_bh(&rtwdev->txq_lock);
 }

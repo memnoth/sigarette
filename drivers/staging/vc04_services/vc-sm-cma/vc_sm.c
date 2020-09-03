@@ -597,18 +597,6 @@ static int vc_sm_dma_buf_end_cpu_access(struct dma_buf *dmabuf,
 	return 0;
 }
 
-static void *vc_sm_dma_buf_kmap(struct dma_buf *dmabuf, unsigned long offset)
-{
-	/* FIXME */
-	return NULL;
-}
-
-static void vc_sm_dma_buf_kunmap(struct dma_buf *dmabuf, unsigned long offset,
-				 void *ptr)
-{
-	/* FIXME */
-}
-
 static const struct dma_buf_ops dma_buf_ops = {
 	.map_dma_buf = vc_sm_map_dma_buf,
 	.unmap_dma_buf = vc_sm_unmap_dma_buf,
@@ -618,8 +606,6 @@ static const struct dma_buf_ops dma_buf_ops = {
 	.detach = vc_sm_dma_buf_detach,
 	.begin_cpu_access = vc_sm_dma_buf_begin_cpu_access,
 	.end_cpu_access = vc_sm_dma_buf_end_cpu_access,
-	.map = vc_sm_dma_buf_kmap,
-	.unmap = vc_sm_dma_buf_kunmap,
 };
 
 /* Dma_buf operations for chaining through to an imported dma_buf */
@@ -704,28 +690,6 @@ void vc_sm_import_dma_buf_release(struct dma_buf *dmabuf)
 }
 
 static
-void *vc_sm_import_dma_buf_kmap(struct dma_buf *dmabuf,
-				unsigned long offset)
-{
-	struct vc_sm_buffer *buf = dmabuf->priv;
-
-	if (!buf->imported)
-		return NULL;
-	return buf->import.dma_buf->ops->map(buf->import.dma_buf, offset);
-}
-
-static
-void vc_sm_import_dma_buf_kunmap(struct dma_buf *dmabuf,
-				 unsigned long offset, void *ptr)
-{
-	struct vc_sm_buffer *buf = dmabuf->priv;
-
-	if (!buf->imported)
-		return;
-	buf->import.dma_buf->ops->unmap(buf->import.dma_buf, offset, ptr);
-}
-
-static
 int vc_sm_import_dma_buf_begin_cpu_access(struct dma_buf *dmabuf,
 					  enum dma_data_direction direction)
 {
@@ -758,8 +722,6 @@ static const struct dma_buf_ops dma_buf_import_ops = {
 	.detach = vc_sm_import_dma_buf_detatch,
 	.begin_cpu_access = vc_sm_import_dma_buf_begin_cpu_access,
 	.end_cpu_access = vc_sm_import_dma_buf_end_cpu_access,
-	.map = vc_sm_import_dma_buf_kmap,
-	.unmap = vc_sm_import_dma_buf_kunmap,
 };
 
 /* Import a dma_buf to be shared with VC. */
@@ -1547,7 +1509,7 @@ static const struct file_operations vc_sm_ops = {
 static void vc_sm_connected_init(void)
 {
 	int ret;
-	VCHI_INSTANCE_T vchi_instance;
+	struct vchi_instance_handle * vchi_instance;
 	struct vc_sm_version version;
 	struct vc_sm_result_t version_result;
 

@@ -351,7 +351,7 @@ static int rpivid_probe(struct platform_device *pdev)
 	dev->mdev.ops = &rpivid_m2m_media_ops;
 	dev->v4l2_dev.mdev = &dev->mdev;
 
-	ret = video_register_device(vfd, VFL_TYPE_GRABBER, video_nr);
+	ret = video_register_device(vfd, VFL_TYPE_VIDEO, video_nr);
 	if (ret) {
 		v4l2_err(&dev->v4l2_dev, "Failed to register video device\n");
 		goto err_m2m;

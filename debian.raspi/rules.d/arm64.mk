@@ -3,8 +3,8 @@ build_arch	= arm64
 header_arch	= arm64
 defconfig	= defconfig
 flavours	= raspi
-build_image	= Image.gz
-kernel_file	= arch/$(build_arch)/boot/Image.gz
+build_image	= Image
+kernel_file	= arch/$(build_arch)/boot/Image
 install_file	= vmlinuz
 no_dumpfile	= true
 
@@ -23,5 +23,4 @@ disable_d_i = true
 do_libc_dev_package=false
 do_doc_package	= false
 do_source_package= false
-do_dkms_wireguard = true
 do_zfs = true

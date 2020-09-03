@@ -48,12 +48,6 @@
 #define CH341_BIT_DCD 0x08
 #define CH341_BITS_MODEM_STAT 0x0f /* all bits */
 
-/*******************************/
-/* baudrate calculation factor */
-/*******************************/
-#define CH341_BAUDBASE_FACTOR 1532620800
-#define CH341_BAUDBASE_DIVMAX 3
-
 /* Break support - the information used to implement this was gleaned from
  * the Net/FreeBSD uchcom.c driver by Takanori Watanabe.  Domo arigato.
  */
@@ -78,6 +72,8 @@
 #define CH341_LCR_CS7          0x02
 #define CH341_LCR_CS6          0x01
 #define CH341_LCR_CS5          0x00
+
+#define CH341_QUIRK_LIMITED_PRESCALER	BIT(0)
 
 static const struct usb_device_id id_table[] = {
 	{ USB_DEVICE(0x4348, 0x5523) },
@@ -146,37 +142,112 @@ static int ch341_control_in(struct usb_device *dev,
 	return 0;
 }
 
+#define CH341_CLKRATE		48000000
+#define CH341_CLK_DIV(ps, fact)	(1 << (12 - 3 * (ps) - (fact)))
+#define CH341_MIN_RATE(ps)	(CH341_CLKRATE / (CH341_CLK_DIV((ps), 1) * 512))
+
+static const speed_t ch341_min_rates[] = {
+	CH341_MIN_RATE(0),
+	CH341_MIN_RATE(1),
+	CH341_MIN_RATE(2),
+	CH341_MIN_RATE(3),
+};
+
+/*
+ * The device line speed is given by the following equation:
+ *
+ *	baudrate = 48000000 / (2^(12 - 3 * ps - fact) * div), where
+ *
+ *		0 <= ps <= 3,
+ *		0 <= fact <= 1,
+ *		2 <= div <= 256 if fact = 0, or
+ *		9 <= div <= 256 if fact = 1
+ */
+static int ch341_get_divisor(struct ch341_private *priv)
+{
+	unsigned int fact, div, clk_div;
+	speed_t speed = priv->baud_rate;
+	bool force_fact0 = false;
+	int ps;
+
+	/*
+	 * Clamp to supported range, this makes the (ps < 0) and (div < 2)
+	 * sanity checks below redundant.
+	 */
+	speed = clamp(speed, 46U, 3000000U);
+
+	/*
+	 * Start with highest possible base clock (fact = 1) that will give a
+	 * divisor strictly less than 512.
+	 */
+	fact = 1;
+	for (ps = 3; ps >= 0; ps--) {
+		if (speed > ch341_min_rates[ps])
+			break;
+	}
+
+	if (ps < 0)
+		return -EINVAL;
+
+	/* Determine corresponding divisor, rounding down. */
+	clk_div = CH341_CLK_DIV(ps, fact);
+	div = CH341_CLKRATE / (clk_div * speed);
+
+	/* Some devices require a lower base clock if ps < 3. */
+	if (ps < 3 && (priv->quirks & CH341_QUIRK_LIMITED_PRESCALER))
+		force_fact0 = true;
+
+	/* Halve base clock (fact = 0) if required. */
+	if (div < 9 || div > 255 || force_fact0) {
+		div /= 2;
+		clk_div *= 2;
+		fact = 0;
+	}
+
+	if (div < 2)
+		return -EINVAL;
+
+	/*
+	 * Pick next divisor if resulting rate is closer to the requested one,
+	 * scale up to avoid rounding errors on low rates.
+	 */
+	if (16 * CH341_CLKRATE / (clk_div * div) - 16 * speed >=
+			16 * speed - 16 * CH341_CLKRATE / (clk_div * (div + 1)))
+		div++;
+
+	/*
+	 * Prefer lower base clock (fact = 0) if even divisor.
+	 *
+	 * Note that this makes the receiver more tolerant to errors.
+	 */
+	if (fact == 1 && div % 2 == 0) {
+		div /= 2;
+		fact = 0;
+	}
+
+	return (0x100 - div) << 8 | fact << 2 | ps;
+}
+
 static int ch341_set_baudrate_lcr(struct usb_device *dev,
 				  struct ch341_private *priv, u8 lcr)
 {
-	short a;
+	int val;
 	int r;
-	unsigned long factor;
-	short divisor;
 
 	if (!priv->baud_rate)
 		return -EINVAL;
-	factor = (CH341_BAUDBASE_FACTOR / priv->baud_rate);
-	divisor = CH341_BAUDBASE_DIVMAX;
 
-	while ((factor > 0xfff0) && divisor) {
-		factor >>= 3;
-		divisor--;
-	}
-
-	if (factor > 0xfff0)
+	val = ch341_get_divisor(priv);
+	if (val < 0)
 		return -EINVAL;
-
-	factor = 0x10000 - factor;
-	a = (factor & 0xff00) | divisor;
 
 	/*
 	 * CH341A buffers data until a full endpoint-size packet (32 bytes)
 	 * has been received unless bit 7 is set.
 	 */
-	a |= BIT(7);
+	val |= BIT(7);
 
-	r = ch341_control_out(dev, CH341_REQ_WRITE_REG, 0x1312, a);
+	r = ch341_control_out(dev, CH341_REQ_WRITE_REG, 0x1312, val);
 	if (r)
 		return r;
 
@@ -271,6 +342,7 @@ static int ch341_detect_quirks(struct usb_serial_port *port)
 			    CH341_REG_BREAK, 0, buffer, size, DEFAULT_TIMEOUT);
 	if (r == -EPIPE) {
 		dev_dbg(&port->dev, "break control not supported\n");
+		quirks = CH341_QUIRK_LIMITED_PRESCALER;
 		r = 0;
 		goto out;
 	}

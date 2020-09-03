@@ -95,13 +95,13 @@ long do_utimes(int dfd, const char __user *filename, struct timespec64 *times,
 		goto out;
 	}
 
-	if (flags & ~AT_SYMLINK_NOFOLLOW)
+	if (flags & ~(AT_SYMLINK_NOFOLLOW | AT_EMPTY_PATH))
 		goto out;
 
 	if (filename == NULL && dfd != AT_FDCWD) {
 		struct fd f;
 
-		if (flags & AT_SYMLINK_NOFOLLOW)
+		if (flags)
 			goto out;
 
 		f = fdget(dfd);
@@ -117,6 +117,8 @@ long do_utimes(int dfd, const char __user *filename, struct timespec64 *times,
 
 		if (!(flags & AT_SYMLINK_NOFOLLOW))
 			lookup_flags |= LOOKUP_FOLLOW;
+		if (flags & AT_EMPTY_PATH)
+			lookup_flags |= LOOKUP_EMPTY;
 retry:
 		error = user_path_at(dfd, filename, lookup_flags, &path);
 		if (error)
@@ -161,9 +163,9 @@ SYSCALL_DEFINE4(utimensat, int, dfd, const char __user *, filename,
  * utimensat() instead.
  */
 static long do_futimesat(int dfd, const char __user *filename,
-			 struct timeval __user *utimes)
+			 struct __kernel_old_timeval __user *utimes)
 {
-	struct timeval times[2];
+	struct __kernel_old_timeval times[2];
 	struct timespec64 tstimes[2];
 
 	if (utimes) {
@@ -190,13 +192,13 @@ static long do_futimesat(int dfd, const char __user *filename,
 
 
 SYSCALL_DEFINE3(futimesat, int, dfd, const char __user *, filename,
-		struct timeval __user *, utimes)
+		struct __kernel_old_timeval __user *, utimes)
 {
 	return do_futimesat(dfd, filename, utimes);
 }
 
 SYSCALL_DEFINE2(utimes, char __user *, filename,
-		struct timeval __user *, utimes)
+		struct __kernel_old_timeval __user *, utimes)
 {
 	return do_futimesat(AT_FDCWD, filename, utimes);
 }

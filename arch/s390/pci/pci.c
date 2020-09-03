@@ -27,6 +27,7 @@
 #include <linux/seq_file.h>
 #include <linux/jump_label.h>
 #include <linux/pci.h>
+#include <linux/printk.h>
 
 #include <asm/isc.h>
 #include <asm/airq.h>
@@ -45,7 +46,7 @@ static DECLARE_BITMAP(zpci_domain, ZPCI_DOMAIN_BITMAP_SIZE);
 static DEFINE_SPINLOCK(zpci_domain_lock);
 
 #define ZPCI_IOMAP_ENTRIES						\
-	min(((unsigned long) ZPCI_NR_DEVICES * PCI_BAR_COUNT / 2),	\
+	min(((unsigned long) ZPCI_NR_DEVICES * PCI_STD_NUM_BARS / 2),	\
 	    ZPCI_IOMAP_MAX_ENTRIES)
 
 unsigned int s390_pci_no_rid;
@@ -225,28 +226,29 @@ void __iowrite64_copy(void __iomem *to, const void *from, size_t count)
        zpci_memcpy_toio(to, from, count);
 }
 
-void __iomem *ioremap(unsigned long ioaddr, unsigned long size)
+void __iomem *ioremap(phys_addr_t addr, size_t size)
 {
+	unsigned long offset, vaddr;
 	struct vm_struct *area;
-	unsigned long offset;
+	phys_addr_t last_addr;
 
-	if (!size)
+	last_addr = addr + size - 1;
+	if (!size || last_addr < addr)
 		return NULL;
 
 	if (!static_branch_unlikely(&have_mio))
-		return (void __iomem *) ioaddr;
+		return (void __iomem *) addr;
 
-	offset = ioaddr & ~PAGE_MASK;
-	ioaddr &= PAGE_MASK;
+	offset = addr & ~PAGE_MASK;
+	addr &= PAGE_MASK;
 	size = PAGE_ALIGN(size + offset);
 	area = get_vm_area(size, VM_IOREMAP);
 	if (!area)
 		return NULL;
 
-	if (ioremap_page_range((unsigned long) area->addr,
-			       (unsigned long) area->addr + size,
-			       ioaddr, PAGE_KERNEL)) {
-		vunmap(area->addr);
+	vaddr = (unsigned long) area->addr;
+	if (ioremap_page_range(vaddr, vaddr + size, addr, PAGE_KERNEL)) {
+		free_vm_area(area);
 		return NULL;
 	}
 	return (void __iomem *) ((unsigned long) area->addr + offset);
@@ -293,7 +295,7 @@ static void __iomem *pci_iomap_range_mio(struct pci_dev *pdev, int bar,
 void __iomem *pci_iomap_range(struct pci_dev *pdev, int bar,
 			      unsigned long offset, unsigned long max)
 {
-	if (!pci_resource_len(pdev, bar) || bar >= PCI_BAR_COUNT)
+	if (bar >= PCI_STD_NUM_BARS || !pci_resource_len(pdev, bar))
 		return NULL;
 
 	if (static_branch_likely(&have_mio))
@@ -323,7 +325,7 @@ static void __iomem *pci_iomap_wc_range_mio(struct pci_dev *pdev, int bar,
 void __iomem *pci_iomap_wc_range(struct pci_dev *pdev, int bar,
 				 unsigned long offset, unsigned long max)
 {
-	if (!pci_resource_len(pdev, bar) || bar >= PCI_BAR_COUNT)
+	if (bar >= PCI_STD_NUM_BARS || !pci_resource_len(pdev, bar))
 		return NULL;
 
 	if (static_branch_likely(&have_mio))
@@ -403,7 +405,7 @@ static void zpci_map_resources(struct pci_dev *pdev)
 	resource_size_t len;
 	int i;
 
-	for (i = 0; i < PCI_BAR_COUNT; i++) {
+	for (i = 0; i < PCI_STD_NUM_BARS; i++) {
 		len = pci_resource_len(pdev, i);
 		if (!len)
 			continue;
@@ -438,7 +440,7 @@ static void zpci_unmap_resources(struct pci_dev *pdev)
 	if (zpci_use_mio(zdev))
 		return;
 
-	for (i = 0; i < PCI_BAR_COUNT; i++) {
+	for (i = 0; i < PCI_STD_NUM_BARS; i++) {
 		len = pci_resource_len(pdev, i);
 		if (!len)
 			continue;
@@ -501,7 +503,7 @@ int zpci_setup_bus_resources(struct zpci_dev *zdev,
 	snprintf(zdev->res_name, sizeof(zdev->res_name),
 		 "PCI Bus %04x:%02x", zdev->uid, ZPCI_BUS_NR);
 
-	for (i = 0; i < PCI_BAR_COUNT; i++) {
+	for (i = 0; i < PCI_STD_NUM_BARS; i++) {
 		if (!zdev->bars[i].size)
 			continue;
 		entry = zpci_alloc_iomap(zdev);
@@ -538,7 +540,7 @@ static void zpci_cleanup_bus_resources(struct zpci_dev *zdev)
 {
 	int i;
 
-	for (i = 0; i < PCI_BAR_COUNT; i++) {
+	for (i = 0; i < PCI_STD_NUM_BARS; i++) {
 		if (!zdev->bars[i].size || !zdev->bars[i].res)
 			continue;
 
@@ -560,7 +562,7 @@ int pcibios_add_device(struct pci_dev *pdev)
 	pdev->dev.dma_ops = &s390_pci_dma_ops;
 	zpci_map_resources(pdev);
 
-	for (i = 0; i < PCI_BAR_COUNT; i++) {
+	for (i = 0; i < PCI_STD_NUM_BARS; i++) {
 		res = &pdev->resource[i];
 		if (res->parent || !res->flags)
 			continue;
@@ -592,49 +594,6 @@ void pcibios_disable_device(struct pci_dev *pdev)
 	zpci_fmb_disable_device(zdev);
 	zpci_debug_exit_device(zdev);
 }
-
-#ifdef CONFIG_HIBERNATE_CALLBACKS
-static int zpci_restore(struct device *dev)
-{
-	struct pci_dev *pdev = to_pci_dev(dev);
-	struct zpci_dev *zdev = to_zpci(pdev);
-	int ret = 0;
-
-	if (zdev->state != ZPCI_FN_STATE_ONLINE)
-		goto out;
-
-	ret = clp_enable_fh(zdev, ZPCI_NR_DMA_SPACES);
-	if (ret)
-		goto out;
-
-	zpci_map_resources(pdev);
-	zpci_register_ioat(zdev, 0, zdev->start_dma, zdev->end_dma,
-			   (u64) zdev->dma_table);
-
-out:
-	return ret;
-}
-
-static int zpci_freeze(struct device *dev)
-{
-	struct pci_dev *pdev = to_pci_dev(dev);
-	struct zpci_dev *zdev = to_zpci(pdev);
-
-	if (zdev->state != ZPCI_FN_STATE_ONLINE)
-		return 0;
-
-	zpci_unregister_ioat(zdev, 0);
-	zpci_unmap_resources(pdev);
-	return clp_disable_fh(zdev);
-}
-
-struct dev_pm_ops pcibios_pm_ops = {
-	.thaw_noirq = zpci_restore,
-	.freeze_noirq = zpci_freeze,
-	.restore_noirq = zpci_restore,
-	.poweroff_noirq = zpci_freeze,
-};
-#endif /* CONFIG_HIBERNATE_CALLBACKS */
 
 static int __zpci_register_domain(int domain)
 {
@@ -713,6 +672,19 @@ int zpci_disable_device(struct zpci_dev *zdev)
 }
 EXPORT_SYMBOL_GPL(zpci_disable_device);
 
+void zpci_remove_device(struct zpci_dev *zdev)
+{
+	struct zpci_bus *zbus = zdev->zbus;
+	struct pci_dev *pdev;
+
+	pdev = pci_get_slot(zbus->bus, zdev->devfn);
+	if (pdev) {
+		if (pdev->is_virtfn)
+			return zpci_remove_virtfn(pdev, zdev->vfn);
+		pci_stop_and_remove_bus_device_locked(pdev);
+	}
+}
+
 int zpci_create_device(struct zpci_dev *zdev)
 {
 	int rc;
@@ -757,13 +729,8 @@ void zpci_release_device(struct kref *kref)
 {
 	struct zpci_dev *zdev = container_of(kref, struct zpci_dev, kref);
 
-	if (zdev->zbus->bus) {
-		struct pci_dev *pdev;
-
-		pdev = pci_get_slot(zdev->zbus->bus, zdev->devfn);
-		if (pdev)
-			pci_stop_and_remove_bus_device_locked(pdev);
-	}
+	if (zdev->zbus->bus)
+		zpci_remove_device(zdev);
 
 	switch (zdev->state) {
 	case ZPCI_FN_STATE_ONLINE:

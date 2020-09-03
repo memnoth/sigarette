@@ -840,7 +840,7 @@ struct mmal_parameter_camera_info {
 	u32 num_cameras;
 	u32 num_flashes;
 	struct mmal_parameter_camera_info_camera
-		cameras[MMAL_PARAMETER_CAMERA_INFO_MAX_CAMERAS];
+				cameras[MMAL_PARAMETER_CAMERA_INFO_MAX_CAMERAS];
 	struct mmal_parameter_camera_info_flash
 		flashes[MMAL_PARAMETER_CAMERA_INFO_MAX_FLASHES];
 };

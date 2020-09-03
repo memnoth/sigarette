@@ -18,7 +18,6 @@
 #include <asm/fixmap.h>
 #include <linux/bcd.h>
 #include <linux/export.h>
-#include <linux/version.h>
 #include <linux/module.h>
 #include <linux/delay.h>
 #include <linux/kthread.h>
@@ -971,7 +970,7 @@ static int __init xdbc_init(void)
 		goto free_and_quit;
 	}
 
-	base = ioremap_nocache(xdbc.xhci_start, xdbc.xhci_length);
+	base = ioremap(xdbc.xhci_start, xdbc.xhci_length);
 	if (!base) {
 		xdbc_trace("failed to remap the io address\n");
 		ret = -ENOMEM;

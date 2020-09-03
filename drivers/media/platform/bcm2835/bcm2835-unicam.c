@@ -88,7 +88,13 @@ MODULE_PARM_DESC(debug, "Debug level 0-3");
 #define unicam_err(dev, fmt, arg...)	\
 		v4l2_err(&(dev)->v4l2_dev, fmt, ##arg)
 
-/* To protect against a dodgy sensor driver never returning an error from
+/*
+ * Unicam must request a minimum of 250Mhz from the VPU clock.
+ * Otherwise the input FIFOs overrun and cause image corruption.
+ */
+#define MIN_VPU_CLOCK_RATE (250 * 1000 * 1000)
+/*
+ * To protect against a dodgy sensor driver never returning an error from
  * enum_mbus_code, set a maximum index value to be used.
  */
 #define MAX_ENUM_MBUS_CODE	128
@@ -105,11 +111,11 @@ MODULE_PARM_DESC(debug, "Debug level 0-3");
  * No imposed limit on the height, so adopt a square image for want
  * of anything better.
  */
-#define MAX_WIDTH	(MAX_BYTESPERLINE / 4)
-#define MAX_HEIGHT	MAX_WIDTH
+#define MAX_WIDTH		(MAX_BYTESPERLINE / 4)
+#define MAX_HEIGHT		MAX_WIDTH
 /* Define a nominal minimum image size */
-#define MIN_WIDTH	16
-#define MIN_HEIGHT	16
+#define MIN_WIDTH		16
+#define MIN_HEIGHT		16
 /* Default size of the embedded buffer */
 #define UNICAM_EMBEDDED_SIZE	8192
 
@@ -117,7 +123,7 @@ MODULE_PARM_DESC(debug, "Debug level 0-3");
  * Size of the dummy buffer. Can be any size really, but the DMA
  * allocation works in units of page sizes.
  */
-#define DUMMY_BUF_SIZE	(PAGE_SIZE)
+#define DUMMY_BUF_SIZE		(PAGE_SIZE)
 
 enum pad_types {
 	IMAGE_PAD,
@@ -298,21 +304,25 @@ static const struct unicam_fmt formats[] = {
 		.csi_dt		= 0x2c,
 	}, {
 		.fourcc		= V4L2_PIX_FMT_SBGGR14P,
+		.repacked_fourcc = V4L2_PIX_FMT_SBGGR14,
 		.code		= MEDIA_BUS_FMT_SBGGR14_1X14,
 		.depth		= 14,
 		.csi_dt		= 0x2d,
 	}, {
 		.fourcc		= V4L2_PIX_FMT_SGBRG14P,
+		.repacked_fourcc = V4L2_PIX_FMT_SGBRG14,
 		.code		= MEDIA_BUS_FMT_SGBRG14_1X14,
 		.depth		= 14,
 		.csi_dt		= 0x2d,
 	}, {
 		.fourcc		= V4L2_PIX_FMT_SGRBG14P,
+		.repacked_fourcc = V4L2_PIX_FMT_SGRBG14,
 		.code		= MEDIA_BUS_FMT_SGRBG14_1X14,
 		.depth		= 14,
 		.csi_dt		= 0x2d,
 	}, {
 		.fourcc		= V4L2_PIX_FMT_SRGGB14P,
+		.repacked_fourcc = V4L2_PIX_FMT_SRGGB14,
 		.code		= MEDIA_BUS_FMT_SRGGB14_1X14,
 		.depth		= 14,
 		.csi_dt		= 0x2d,
@@ -335,11 +345,17 @@ static const struct unicam_fmt formats[] = {
 		.depth		= 10,
 		.csi_dt		= 0x2b,
 	}, {
-		/* NB There is no packed V4L2 fourcc for this format. */
+		.fourcc		= V4L2_PIX_FMT_Y12P,
 		.repacked_fourcc = V4L2_PIX_FMT_Y12,
 		.code		= MEDIA_BUS_FMT_Y12_1X12,
 		.depth		= 12,
 		.csi_dt		= 0x2c,
+	}, {
+		.fourcc		= V4L2_PIX_FMT_Y14P,
+		.repacked_fourcc = V4L2_PIX_FMT_Y14,
+		.code		= MEDIA_BUS_FMT_Y14_1X14,
+		.depth		= 14,
+		.csi_dt		= 0x2d,
 	},
 	/* Embedded data format */
 	{
@@ -349,28 +365,20 @@ static const struct unicam_fmt formats[] = {
 	}
 };
 
-struct unicam_dmaqueue {
-	struct list_head	active;
-};
-
 struct unicam_buffer {
 	struct vb2_v4l2_buffer vb;
 	struct list_head list;
 };
 
-struct unicam_cfg {
-	/* peripheral base address */
-	void __iomem *base;
-	/* clock gating base address */
-	void __iomem *clk_gate_base;
-};
-
-#define MAX_POSSIBLE_PIX_FMTS (ARRAY_SIZE(formats))
+static inline struct unicam_buffer *to_unicam_buffer(struct vb2_buffer *vb)
+{
+	return container_of(vb, struct unicam_buffer, vb.vb2_buf);
+}
 
 struct unicam_node {
-	int registered;
+	bool registered;
 	int open;
-	int streaming;
+	bool streaming;
 	unsigned int pad_id;
 	/* Pointer pointing to current v4l2_buffer */
 	struct unicam_buffer *cur_frm;
@@ -385,7 +393,7 @@ struct unicam_node {
 	/* Buffer queue used in video-buf */
 	struct vb2_queue buffer_queue;
 	/* Queue of filled frames */
-	struct unicam_dmaqueue dma_queue;
+	struct list_head dma_queue;
 	/* IRQ lock for DMA queue */
 	spinlock_t dma_queue_lock;
 	/* lock used to access this structure */
@@ -395,7 +403,6 @@ struct unicam_node {
 	/* Pointer to the parent handle */
 	struct unicam_device *dev;
 	struct media_pad pad;
-	struct v4l2_ctrl_handler ctrl_handler;
 	unsigned int embedded_lines;
 	/*
 	 * Dummy buffer intended to be used by unicam
@@ -406,16 +413,19 @@ struct unicam_node {
 };
 
 struct unicam_device {
+	struct kref kref;
+
 	/* V4l2 specific parameters */
-
-	struct v4l2_fwnode_endpoint endpoint;
-
 	struct v4l2_async_subdev asd;
 
-	/* unicam cfg */
-	struct unicam_cfg cfg;
-	/* clock handle */
+	/* peripheral base address */
+	void __iomem *base;
+	/* clock gating base address */
+	void __iomem *clk_gate_base;
+	/* lp clock handle */
 	struct clk *clock;
+	/* vpu clock handle */
+	struct clk *vpu_clock;
 	/* V4l2 device */
 	struct v4l2_device v4l2_dev;
 	struct media_device mdev;
@@ -431,7 +441,6 @@ struct unicam_device {
 	/* Pad config for the sensor */
 	struct v4l2_subdev_pad_config *sensor_config;
 
-	unsigned int virtual_channel;
 	enum v4l2_mbus_type bus_type;
 	/*
 	 * Stores bus.mipi_csi2.flags for CSI2 sensors, or
@@ -443,17 +452,30 @@ struct unicam_device {
 	bool sensor_embedded_data;
 
 	struct unicam_node node[MAX_NODES];
+	struct v4l2_ctrl_handler ctrl_handler;
 };
 
+static inline struct unicam_device *
+to_unicam_device(struct v4l2_device *v4l2_dev)
+{
+	return container_of(v4l2_dev, struct unicam_device, v4l2_dev);
+}
+
 /* Hardware access */
-#define clk_write(dev, val) writel((val) | 0x5a000000, (dev)->clk_gate_base)
-#define clk_read(dev) readl((dev)->clk_gate_base)
+static inline void clk_write(struct unicam_device *dev, u32 val)
+{
+	writel(val | 0x5a000000, dev->clk_gate_base);
+}
 
-#define reg_read(dev, offset) readl((dev)->base + (offset))
-#define reg_write(dev, offset, val) writel(val, (dev)->base + (offset))
+static inline u32 reg_read(struct unicam_device *dev, u32 offset)
+{
+	return readl(dev->base + offset);
+}
 
-#define reg_read_field(dev, offset, mask) get_field(reg_read((dev), (offset), \
-						    mask))
+static inline void reg_write(struct unicam_device *dev, u32 offset, u32 val)
+{
+	writel(val, dev->base + offset);
+}
 
 static inline int get_field(u32 value, u32 mask)
 {
@@ -469,13 +491,19 @@ static inline void set_field(u32 *valp, u32 field, u32 mask)
 	*valp = val;
 }
 
-static inline void reg_write_field(struct unicam_cfg *dev, u32 offset,
+static inline u32 reg_read_field(struct unicam_device *dev, u32 offset,
+				 u32 mask)
+{
+	return get_field(reg_read(dev, offset), mask);
+}
+
+static inline void reg_write_field(struct unicam_device *dev, u32 offset,
 				   u32 field, u32 mask)
 {
-	u32 val = reg_read((dev), (offset));
+	u32 val = reg_read(dev, offset);
 
 	set_field(&val, field, mask);
-	reg_write((dev), (offset), val);
+	reg_write(dev, offset, val);
 }
 
 /* Power management functions */
@@ -505,15 +533,15 @@ static const struct unicam_fmt *find_format_by_code(u32 code)
 static int check_mbus_format(struct unicam_device *dev,
 			     const struct unicam_fmt *format)
 {
-	struct v4l2_subdev_mbus_code_enum mbus_code;
+	unsigned int i;
 	int ret = 0;
-	int i;
 
 	for (i = 0; !ret && i < MAX_ENUM_MBUS_CODE; i++) {
-		memset(&mbus_code, 0, sizeof(mbus_code));
-		mbus_code.index = i;
-		mbus_code.pad = IMAGE_PAD;
-		mbus_code.which = V4L2_SUBDEV_FORMAT_ACTIVE;
+		struct v4l2_subdev_mbus_code_enum mbus_code = {
+			.index = i,
+			.pad = IMAGE_PAD,
+			.which = V4L2_SUBDEV_FORMAT_ACTIVE,
+		};
 
 		ret = v4l2_subdev_call(dev->sensor, pad, enum_mbus_code,
 				       NULL, &mbus_code);
@@ -591,6 +619,8 @@ static int __subdev_set_format(struct unicam_device *dev,
 			       &sd_fmt);
 	if (ret < 0)
 		return ret;
+
+	*fmt = sd_fmt.format;
 
 	if (pad_id == IMAGE_PAD)
 		unicam_dbg(1, dev, "%s %dx%d code:%04x\n", __func__, fmt->width,
@@ -674,7 +704,7 @@ static int unicam_reset_format(struct unicam_node *node)
 	return 0;
 }
 
-static void unicam_wr_dma_addr(struct unicam_cfg *cfg, dma_addr_t dmaaddr,
+static void unicam_wr_dma_addr(struct unicam_device *dev, dma_addr_t dmaaddr,
 			       unsigned int buffer_size, int pad_id)
 {
 	dma_addr_t endaddr = dmaaddr + buffer_size;
@@ -684,14 +714,14 @@ static void unicam_wr_dma_addr(struct unicam_cfg *cfg, dma_addr_t dmaaddr,
 	 * set to 0x3 to signify uncached access through the Videocore memory
 	 * controller.
 	 */
-	BUG_ON((dmaaddr >> 30) != 0x3 && (endaddr >> 30) != 0x3);
+	WARN_ON((dmaaddr >> 30) != 0x3 || (endaddr >> 30) != 0x3);
 
 	if (pad_id == IMAGE_PAD) {
-		reg_write(cfg, UNICAM_IBSA0, dmaaddr);
-		reg_write(cfg, UNICAM_IBEA0, endaddr);
+		reg_write(dev, UNICAM_IBSA0, dmaaddr);
+		reg_write(dev, UNICAM_IBEA0, endaddr);
 	} else {
-		reg_write(cfg, UNICAM_DBSA0, dmaaddr);
-		reg_write(cfg, UNICAM_DBEA0, endaddr);
+		reg_write(dev, UNICAM_DBSA0, dmaaddr);
+		reg_write(dev, UNICAM_DBEA0, endaddr);
 	}
 }
 
@@ -705,39 +735,38 @@ static inline unsigned int unicam_get_lines_done(struct unicam_device *dev)
 		return 0;
 
 	start_addr = vb2_dma_contig_plane_dma_addr(&frm->vb.vb2_buf, 0);
-	cur_addr = reg_read(&dev->cfg, UNICAM_IBWP);
+	cur_addr = reg_read(dev, UNICAM_IBWP);
 	return (unsigned int)(cur_addr - start_addr) / stride;
 }
 
 static inline void unicam_schedule_next_buffer(struct unicam_node *node)
 {
 	struct unicam_device *dev = node->dev;
-	struct unicam_dmaqueue *dma_q = &node->dma_queue;
 	struct unicam_buffer *buf;
 	unsigned int size;
 	dma_addr_t addr;
 
-	buf = list_entry(dma_q->active.next, struct unicam_buffer, list);
+	buf = list_first_entry(&node->dma_queue, struct unicam_buffer, list);
 	node->next_frm = buf;
 	list_del(&buf->list);
 
 	addr = vb2_dma_contig_plane_dma_addr(&buf->vb.vb2_buf, 0);
 	size = (node->pad_id == IMAGE_PAD) ?
-			dev->node[IMAGE_PAD].v_fmt.fmt.pix.sizeimage :
-			dev->node[METADATA_PAD].v_fmt.fmt.meta.buffersize;
+			node->v_fmt.fmt.pix.sizeimage :
+			node->v_fmt.fmt.meta.buffersize;
 
-	unicam_wr_dma_addr(&dev->cfg, addr, size, node->pad_id);
+	unicam_wr_dma_addr(dev, addr, size, node->pad_id);
 }
 
 static inline void unicam_schedule_dummy_buffer(struct unicam_node *node)
 {
 	struct unicam_device *dev = node->dev;
-	dma_addr_t addr = node->dummy_buf_dma_addr;
 
 	unicam_dbg(3, dev, "Scheduling dummy buffer for node %d\n",
 		   node->pad_id);
 
-	unicam_wr_dma_addr(&dev->cfg, addr, DUMMY_BUF_SIZE, node->pad_id);
+	unicam_wr_dma_addr(dev, node->dummy_buf_dma_addr, DUMMY_BUF_SIZE,
+			   node->pad_id);
 	node->next_frm = NULL;
 }
 
@@ -750,20 +779,20 @@ static inline void unicam_process_buffer_complete(struct unicam_node *node,
 	vb2_buffer_done(&node->cur_frm->vb.vb2_buf, VB2_BUF_STATE_DONE);
 }
 
-static int unicam_num_nodes_streaming(struct unicam_device *dev)
+static bool unicam_all_nodes_streaming(struct unicam_device *dev)
 {
-	return dev->node[IMAGE_PAD].streaming +
-	       dev->node[METADATA_PAD].streaming;
-}
-
-static int unicam_all_nodes_streaming(struct unicam_device *dev)
-{
-	int ret;
+	bool ret;
 
 	ret = dev->node[IMAGE_PAD].open && dev->node[IMAGE_PAD].streaming;
 	ret &= !dev->node[METADATA_PAD].open ||
 	       dev->node[METADATA_PAD].streaming;
 	return ret;
+}
+
+static bool unicam_all_nodes_disabled(struct unicam_device *dev)
+{
+	return !dev->node[IMAGE_PAD].streaming &&
+	       !dev->node[METADATA_PAD].streaming;
 }
 
 static void unicam_queue_event_sof(struct unicam_device *unicam)
@@ -786,27 +815,34 @@ static void unicam_queue_event_sof(struct unicam_device *unicam)
  */
 static irqreturn_t unicam_isr(int irq, void *dev)
 {
-	struct unicam_device *unicam = (struct unicam_device *)dev;
-	struct unicam_cfg *cfg = &unicam->cfg;
+	struct unicam_device *unicam = dev;
 	unsigned int lines_done = unicam_get_lines_done(dev);
 	unsigned int sequence = unicam->sequence;
-	int num_nodes_streaming = unicam_num_nodes_streaming(dev);
-	int ista, sta;
+	unsigned int i;
+	u32 ista, sta;
 	u64 ts;
-	int i;
 
-	sta = reg_read(cfg, UNICAM_STA);
-	/* Write value back to clear the interrupts */
-	reg_write(cfg, UNICAM_STA, sta);
+	/*
+	 * Don't service interrupts if not streaming.
+	 * Avoids issues if the VPU should enable the
+	 * peripheral without the kernel knowing (that
+	 * shouldn't happen, but causes issues if it does).
+	 */
+	if (unicam_all_nodes_disabled(unicam))
+		return IRQ_NONE;
 
-	ista = reg_read(cfg, UNICAM_ISTA);
+	sta = reg_read(unicam, UNICAM_STA);
 	/* Write value back to clear the interrupts */
-	reg_write(cfg, UNICAM_ISTA, ista);
+	reg_write(unicam, UNICAM_STA, sta);
+
+	ista = reg_read(unicam, UNICAM_ISTA);
+	/* Write value back to clear the interrupts */
+	reg_write(unicam, UNICAM_ISTA, ista);
 
 	unicam_dbg(3, unicam, "ISR: ISTA: 0x%X, STA: 0x%X, sequence %d, lines done %d",
 		   ista, sta, sequence, lines_done);
 
-	if (!(sta && (UNICAM_IS | UNICAM_PI0)))
+	if (!(sta & (UNICAM_IS | UNICAM_PI0)))
 		return IRQ_HANDLED;
 
 	/*
@@ -822,7 +858,10 @@ static irqreturn_t unicam_isr(int irq, void *dev)
 		 * dummy buffer to dump out frames until we get a new buffer
 		 * to use.
 		 */
-		for (i = 0; i < num_nodes_streaming; i++) {
+		for (i = 0; i < ARRAY_SIZE(unicam->node); i++) {
+			if (!unicam->node[i].streaming)
+				continue;
+
 			if (unicam->node[i].cur_frm)
 				unicam_process_buffer_complete(&unicam->node[i],
 							       sequence);
@@ -837,7 +876,10 @@ static irqreturn_t unicam_isr(int irq, void *dev)
 		 * aka frame start.
 		 */
 		ts = ktime_get_ns();
-		for (i = 0; i < num_nodes_streaming; i++) {
+		for (i = 0; i < ARRAY_SIZE(unicam->node); i++) {
+			if (!unicam->node[i].streaming)
+				continue;
+
 			if (unicam->node[i].cur_frm)
 				unicam->node[i].cur_frm->vb.vb2_buf.timestamp =
 								ts;
@@ -851,25 +893,29 @@ static irqreturn_t unicam_isr(int irq, void *dev)
 
 		unicam_queue_event_sof(unicam);
 	}
+
 	/*
 	 * Cannot swap buffer at frame end, there may be a race condition
 	 * where the HW does not actually swap it if the new frame has
 	 * already started.
 	 */
 	if (ista & (UNICAM_FSI | UNICAM_LCI) && !(ista & UNICAM_FEI)) {
-		for (i = 0; i < num_nodes_streaming; i++) {
+		for (i = 0; i < ARRAY_SIZE(unicam->node); i++) {
+			if (!unicam->node[i].streaming)
+				continue;
+
 			spin_lock(&unicam->node[i].dma_queue_lock);
-			if (!list_empty(&unicam->node[i].dma_queue.active) &&
+			if (!list_empty(&unicam->node[i].dma_queue) &&
 			    !unicam->node[i].next_frm)
 				unicam_schedule_next_buffer(&unicam->node[i]);
 			spin_unlock(&unicam->node[i].dma_queue_lock);
 		}
 	}
 
-	if (reg_read(&unicam->cfg, UNICAM_ICTL) & UNICAM_FCM) {
+	if (reg_read(unicam, UNICAM_ICTL) & UNICAM_FCM) {
 		/* Switch out of trigger mode if selected */
-		reg_write_field(&unicam->cfg, UNICAM_ICTL, 1, UNICAM_TFC);
-		reg_write_field(&unicam->cfg, UNICAM_ICTL, 0, UNICAM_FCM);
+		reg_write_field(unicam, UNICAM_ICTL, 1, UNICAM_TFC);
+		reg_write_field(unicam, UNICAM_ICTL, 0, UNICAM_FCM);
 	}
 	return IRQ_HANDLED;
 }
@@ -884,16 +930,9 @@ static int unicam_querycap(struct file *file, void *priv,
 	strlcpy(cap->card, UNICAM_MODULE_NAME, sizeof(cap->card));
 
 	snprintf(cap->bus_info, sizeof(cap->bus_info),
-		 "platform:%s", dev->v4l2_dev.name);
+		 "platform:%s", dev_name(&dev->pdev->dev));
 
-	cap->capabilities = V4L2_CAP_VIDEO_CAPTURE | V4L2_CAP_STREAMING |
-			    V4L2_CAP_READWRITE | V4L2_CAP_DEVICE_CAPS |
-			    V4L2_CAP_META_CAPTURE;
-
-	if (node->pad_id == IMAGE_PAD)
-		cap->device_caps = V4L2_CAP_VIDEO_CAPTURE | V4L2_CAP_STREAMING;
-	else
-		cap->device_caps = V4L2_CAP_META_CAPTURE | V4L2_CAP_STREAMING;
+	cap->capabilities |= V4L2_CAP_VIDEO_CAPTURE | V4L2_CAP_META_CAPTURE;
 
 	return 0;
 }
@@ -903,20 +942,20 @@ static int unicam_enum_fmt_vid_cap(struct file *file, void  *priv,
 {
 	struct unicam_node *node = video_drvdata(file);
 	struct unicam_device *dev = node->dev;
-	struct v4l2_subdev_mbus_code_enum mbus_code;
-	const struct unicam_fmt *fmt = NULL;
-	int index = 0;
+	unsigned int index = 0;
+	unsigned int i;
 	int ret = 0;
-	int i;
 
-	if (node->pad_id == METADATA_PAD)
+	if (node->pad_id != IMAGE_PAD)
 		return -EINVAL;
 
 	for (i = 0; !ret && i < MAX_ENUM_MBUS_CODE; i++) {
-		memset(&mbus_code, 0, sizeof(mbus_code));
-		mbus_code.index = i;
-		mbus_code.pad = IMAGE_PAD;
-		mbus_code.which = V4L2_SUBDEV_FORMAT_ACTIVE;
+		struct v4l2_subdev_mbus_code_enum mbus_code = {
+			.index = i,
+			.pad = IMAGE_PAD,
+			.which = V4L2_SUBDEV_FORMAT_ACTIVE,
+		};
+		const struct unicam_fmt *fmt;
 
 		ret = v4l2_subdev_call(dev->sensor, pad, enum_mbus_code,
 				       NULL, &mbus_code);
@@ -974,23 +1013,8 @@ static int unicam_g_fmt_vid_cap(struct file *file, void *priv,
 	if (!fmt)
 		return -EINVAL;
 
-	if (node->fmt != fmt) {
-		/*
-		 * The sensor format has changed so the pixelformat needs to
-		 * be updated. Try and retain the packed/unpacked choice if
-		 * at all possible.
-		 */
-		if (node->fmt->repacked_fourcc ==
-						node->v_fmt.fmt.pix.pixelformat)
-			/* Using the repacked format */
-			node->v_fmt.fmt.pix.pixelformat = fmt->repacked_fourcc;
-		else
-			/* Using the native format */
-			node->v_fmt.fmt.pix.pixelformat = fmt->fourcc;
-
-		node->fmt = fmt;
-	}
-
+	node->fmt = fmt;
+	node->v_fmt.fmt.pix.pixelformat = fmt->fourcc;
 	*f = node->v_fmt;
 
 	return 0;
@@ -1001,12 +1025,12 @@ const struct unicam_fmt *get_first_supported_format(struct unicam_device *dev)
 {
 	struct v4l2_subdev_mbus_code_enum mbus_code;
 	const struct unicam_fmt *fmt = NULL;
-	int ret = 0;
-	int j;
+	unsigned int i;
+	int ret;
 
-	for (j = 0; ret != -EINVAL && ret != -ENOIOCTLCMD; ++j) {
+	for (i = 0; ret != -EINVAL && ret != -ENOIOCTLCMD; ++i) {
 		memset(&mbus_code, 0, sizeof(mbus_code));
-		mbus_code.index = j;
+		mbus_code.index = i;
 		mbus_code.pad = IMAGE_PAD;
 		mbus_code.which = V4L2_SUBDEV_FORMAT_ACTIVE;
 
@@ -1014,13 +1038,13 @@ const struct unicam_fmt *get_first_supported_format(struct unicam_device *dev)
 				       &mbus_code);
 		if (ret < 0) {
 			unicam_dbg(2, dev,
-				   "subdev->enum_mbus_code idx %d returned %d - continue\n",
-				   j, ret);
+				   "subdev->enum_mbus_code idx %u returned %d - continue\n",
+				   i, ret);
 			continue;
 		}
 
-		unicam_dbg(2, dev, "subdev %s: code: 0x%08x idx: %d\n",
-			   dev->sensor->name, mbus_code.code, j);
+		unicam_dbg(2, dev, "subdev %s: code: 0x%08x idx: %u\n",
+			   dev->sensor->name, mbus_code.code, i);
 
 		fmt = find_format_by_code(mbus_code.code);
 		unicam_dbg(2, dev, "fmt 0x%08x returned as %p, V4L2 FOURCC 0x%08x, csi_dt 0x%02x\n",
@@ -1046,12 +1070,13 @@ static int unicam_try_fmt_vid_cap(struct file *file, void *priv,
 	const struct unicam_fmt *fmt;
 	int ret;
 
-	if (node->pad_id == METADATA_PAD)
+	if (node->pad_id != IMAGE_PAD)
 		return -EINVAL;
 
 	fmt = find_format_by_pix(dev, f->fmt.pix.pixelformat);
 	if (!fmt) {
-		/* Pixel format not supported by unicam. Choose the first
+		/*
+		 * Pixel format not supported by unicam. Choose the first
 		 * supported format, and let the sensor choose something else.
 		 */
 		unicam_dbg(3, dev, "Fourcc format (0x%08x) not found. Use first format.\n",
@@ -1081,7 +1106,8 @@ static int unicam_try_fmt_vid_cap(struct file *file, void *priv,
 		/* Sensor has returned an alternate format */
 		fmt = find_format_by_code(mbus_fmt->code);
 		if (!fmt) {
-			/* The alternate format is one unicam can't support.
+			/*
+			 * The alternate format is one unicam can't support.
 			 * Find the first format that is supported by both, and
 			 * then set that.
 			 */
@@ -1099,7 +1125,8 @@ static int unicam_try_fmt_vid_cap(struct file *file, void *priv,
 			v4l2_fill_pix_format(&f->fmt.pix, &sd_fmt.format);
 
 			if (mbus_fmt->code != fmt->code) {
-				/* We've set a format that the sensor reports
+				/*
+				 * We've set a format that the sensor reports
 				 * as being supported, but it refuses to set it.
 				 * Not much else we can do.
 				 * Assume that the sensor driver may accept the
@@ -1137,13 +1164,15 @@ static int unicam_s_fmt_vid_cap(struct file *file, void *priv,
 
 	fmt = find_format_by_pix(dev, f->fmt.pix.pixelformat);
 	if (!fmt) {
-		/* Unknown pixel format - adopt a default.
+		/*
+		 * Unknown pixel format - adopt a default.
 		 * This shouldn't happen as try_fmt should have resolved any
 		 * issues first.
 		 */
 		fmt = get_first_supported_format(dev);
 		if (!fmt)
-			/* It shouldn't be possible to get here with no
+			/*
+			 * It shouldn't be possible to get here with no
 			 * supported formats
 			 */
 			return -EINVAL;
@@ -1189,18 +1218,19 @@ static int unicam_enum_fmt_meta_cap(struct file *file, void *priv,
 {
 	struct unicam_node *node = video_drvdata(file);
 	struct unicam_device *dev = node->dev;
-	struct v4l2_subdev_mbus_code_enum mbus_code;
-	const struct unicam_fmt *fmt = NULL;
+	const struct unicam_fmt *fmt;
+	u32 code;
 	int ret = 0;
 
 	if (node->pad_id != METADATA_PAD || f->index != 0)
 		return -EINVAL;
 
 	if (dev->sensor_embedded_data) {
-		memset(&mbus_code, 0, sizeof(mbus_code));
-		mbus_code.index = f->index;
-		mbus_code.which = V4L2_SUBDEV_FORMAT_ACTIVE;
-		mbus_code.pad = METADATA_PAD;
+		struct v4l2_subdev_mbus_code_enum mbus_code = {
+			.index = f->index,
+			.which = V4L2_SUBDEV_FORMAT_ACTIVE,
+			.pad = METADATA_PAD,
+		};
 
 		ret = v4l2_subdev_call(dev->sensor, pad, enum_mbus_code, NULL,
 				       &mbus_code);
@@ -1210,11 +1240,13 @@ static int unicam_enum_fmt_meta_cap(struct file *file, void *priv,
 				   ret);
 			return -EINVAL;
 		}
+
+		code = mbus_code.code;
 	} else {
-		mbus_code.code = MEDIA_BUS_FMT_SENSOR_DATA;
+		code = MEDIA_BUS_FMT_SENSOR_DATA;
 	}
 
-	fmt = find_format_by_code(mbus_code.code);
+	fmt = find_format_by_code(code);
 	if (fmt)
 		f->pixelformat = fmt->fourcc;
 
@@ -1230,56 +1262,6 @@ static int unicam_g_fmt_meta_cap(struct file *file, void *priv,
 		return -EINVAL;
 
 	*f = node->v_fmt;
-
-	return 0;
-}
-
-static int unicam_try_fmt_meta_cap(struct file *file, void *priv,
-				   struct v4l2_format *f)
-{
-	struct unicam_node *node = video_drvdata(file);
-
-	if (node->pad_id != METADATA_PAD)
-		return -EINVAL;
-
-	*f = node->v_fmt;
-
-	return 0;
-}
-
-static int unicam_s_fmt_meta_cap(struct file *file, void *priv,
-				 struct v4l2_format *f)
-{
-	struct unicam_node *node = video_drvdata(file);
-	struct unicam_device *dev = node->dev;
-	struct v4l2_mbus_framefmt mbus_fmt = { 0 };
-	const struct unicam_fmt *fmt;
-	int ret;
-
-	if (node->pad_id == IMAGE_PAD)
-		return -EINVAL;
-
-	if (dev->sensor_embedded_data) {
-		fmt = find_format_by_pix(dev, f->fmt.meta.dataformat);
-		if (!fmt) {
-			unicam_err(dev, "unknown format: V4L2 pix 0x%08x\n",
-				   f->fmt.meta.dataformat);
-			return -EINVAL;
-		}
-		mbus_fmt.code = fmt->code;
-		ret = __subdev_set_format(dev, &mbus_fmt, node->pad_id);
-		if (ret) {
-			unicam_dbg(3, dev, "%s __subdev_set_format failed %d\n",
-				   __func__, ret);
-			return ret;
-		}
-	}
-
-	*f = node->v_fmt;
-
-	unicam_dbg(3, dev, "%s size %d, V4L2 pix 0x%08x\n",
-		   __func__, node->v_fmt.fmt.meta.buffersize,
-		   node->v_fmt.fmt.meta.dataformat);
 
 	return 0;
 }
@@ -1318,8 +1300,7 @@ static int unicam_buffer_prepare(struct vb2_buffer *vb)
 {
 	struct unicam_node *node = vb2_get_drv_priv(vb->vb2_queue);
 	struct unicam_device *dev = node->dev;
-	struct unicam_buffer *buf = container_of(vb, struct unicam_buffer,
-					      vb.vb2_buf);
+	struct unicam_buffer *buf = to_unicam_buffer(vb);
 	unsigned long size;
 
 	if (WARN_ON(!node->fmt))
@@ -1340,19 +1321,17 @@ static int unicam_buffer_prepare(struct vb2_buffer *vb)
 static void unicam_buffer_queue(struct vb2_buffer *vb)
 {
 	struct unicam_node *node = vb2_get_drv_priv(vb->vb2_queue);
-	struct unicam_buffer *buf = container_of(vb, struct unicam_buffer,
-					      vb.vb2_buf);
-	struct unicam_dmaqueue *dma_queue = &node->dma_queue;
-	unsigned long flags = 0;
+	struct unicam_buffer *buf = to_unicam_buffer(vb);
+	unsigned long flags;
 
 	spin_lock_irqsave(&node->dma_queue_lock, flags);
-	list_add_tail(&buf->list, &dma_queue->active);
+	list_add_tail(&buf->list, &node->dma_queue);
 	spin_unlock_irqrestore(&node->dma_queue_lock, flags);
 }
 
 static void unicam_set_packing_config(struct unicam_device *dev)
 {
-	int pack, unpack;
+	u32 pack, unpack;
 	u32 val;
 
 	if (dev->node[IMAGE_PAD].v_fmt.fmt.pix.pixelformat ==
@@ -1388,40 +1367,35 @@ static void unicam_set_packing_config(struct unicam_device *dev)
 	val = 0;
 	set_field(&val, unpack, UNICAM_PUM_MASK);
 	set_field(&val, pack, UNICAM_PPM_MASK);
-	reg_write(&dev->cfg, UNICAM_IPIPE, val);
+	reg_write(dev, UNICAM_IPIPE, val);
 }
 
 static void unicam_cfg_image_id(struct unicam_device *dev)
 {
-	struct unicam_cfg *cfg = &dev->cfg;
-
 	if (dev->bus_type == V4L2_MBUS_CSI2_DPHY) {
-		/* CSI2 mode */
-		reg_write(cfg, UNICAM_IDI0,
-			  (dev->virtual_channel << 6) |
-					      dev->node[IMAGE_PAD].fmt->csi_dt);
+		/* CSI2 mode, hardcode VC 0 for now. */
+		reg_write(dev, UNICAM_IDI0,
+			  (0 << 6) | dev->node[IMAGE_PAD].fmt->csi_dt);
 	} else {
 		/* CCP2 mode */
-		reg_write(cfg, UNICAM_IDI0,
+		reg_write(dev, UNICAM_IDI0,
 			  0x80 | dev->node[IMAGE_PAD].fmt->csi_dt);
 	}
 }
 
 static void unicam_enable_ed(struct unicam_device *dev)
 {
-	struct unicam_cfg *cfg = &dev->cfg;
-	u32 val = reg_read(cfg, UNICAM_DCS);
+	u32 val = reg_read(dev, UNICAM_DCS);
 
 	set_field(&val, 2, UNICAM_EDL_MASK);
 	/* Do not wrap at the end of the embedded data buffer */
 	set_field(&val, 0, UNICAM_DBOB);
 
-	reg_write(cfg, UNICAM_DCS, val);
+	reg_write(dev, UNICAM_DCS, val);
 }
 
 static void unicam_start_rx(struct unicam_device *dev, dma_addr_t *addr)
 {
-	struct unicam_cfg *cfg = &dev->cfg;
 	int line_int_freq = dev->node[IMAGE_PAD].v_fmt.fmt.pix.height >> 2;
 	unsigned int size, i;
 	u32 val;
@@ -1433,29 +1407,29 @@ static void unicam_start_rx(struct unicam_device *dev, dma_addr_t *addr)
 	val = 1;
 	for (i = 0; i < dev->active_data_lanes; i++)
 		val = val << 2 | 1;
-	clk_write(cfg, val);
+	clk_write(dev, val);
 
 	/* Basic init */
-	reg_write(cfg, UNICAM_CTRL, UNICAM_MEM);
+	reg_write(dev, UNICAM_CTRL, UNICAM_MEM);
 
 	/* Enable analogue control, and leave in reset. */
 	val = UNICAM_AR;
 	set_field(&val, 7, UNICAM_CTATADJ_MASK);
 	set_field(&val, 7, UNICAM_PTATADJ_MASK);
-	reg_write(cfg, UNICAM_ANA, val);
+	reg_write(dev, UNICAM_ANA, val);
 	usleep_range(1000, 2000);
 
 	/* Come out of reset */
-	reg_write_field(cfg, UNICAM_ANA, 0, UNICAM_AR);
+	reg_write_field(dev, UNICAM_ANA, 0, UNICAM_AR);
 
 	/* Peripheral reset */
-	reg_write_field(cfg, UNICAM_CTRL, 1, UNICAM_CPR);
-	reg_write_field(cfg, UNICAM_CTRL, 0, UNICAM_CPR);
+	reg_write_field(dev, UNICAM_CTRL, 1, UNICAM_CPR);
+	reg_write_field(dev, UNICAM_CTRL, 0, UNICAM_CPR);
 
-	reg_write_field(cfg, UNICAM_CTRL, 0, UNICAM_CPE);
+	reg_write_field(dev, UNICAM_CTRL, 0, UNICAM_CPE);
 
 	/* Enable Rx control. */
-	val = reg_read(cfg, UNICAM_CTRL);
+	val = reg_read(dev, UNICAM_CTRL);
 	if (dev->bus_type == V4L2_MBUS_CSI2_DPHY) {
 		set_field(&val, UNICAM_CPM_CSI2, UNICAM_CPM_MASK);
 		set_field(&val, UNICAM_DCM_STROBE, UNICAM_DCM_MASK);
@@ -1466,42 +1440,42 @@ static void unicam_start_rx(struct unicam_device *dev, dma_addr_t *addr)
 	/* Packet framer timeout */
 	set_field(&val, 0xf, UNICAM_PFT_MASK);
 	set_field(&val, 128, UNICAM_OET_MASK);
-	reg_write(cfg, UNICAM_CTRL, val);
+	reg_write(dev, UNICAM_CTRL, val);
 
-	reg_write(cfg, UNICAM_IHWIN, 0);
-	reg_write(cfg, UNICAM_IVWIN, 0);
+	reg_write(dev, UNICAM_IHWIN, 0);
+	reg_write(dev, UNICAM_IVWIN, 0);
 
 	/* AXI bus access QoS setup */
-	val = reg_read(&dev->cfg, UNICAM_PRI);
+	val = reg_read(dev, UNICAM_PRI);
 	set_field(&val, 0, UNICAM_BL_MASK);
 	set_field(&val, 0, UNICAM_BS_MASK);
 	set_field(&val, 0xe, UNICAM_PP_MASK);
 	set_field(&val, 8, UNICAM_NP_MASK);
 	set_field(&val, 2, UNICAM_PT_MASK);
 	set_field(&val, 1, UNICAM_PE);
-	reg_write(cfg, UNICAM_PRI, val);
+	reg_write(dev, UNICAM_PRI, val);
 
-	reg_write_field(cfg, UNICAM_ANA, 0, UNICAM_DDL);
+	reg_write_field(dev, UNICAM_ANA, 0, UNICAM_DDL);
 
 	/* Always start in trigger frame capture mode (UNICAM_FCM set) */
 	val = UNICAM_FSIE | UNICAM_FEIE | UNICAM_FCM | UNICAM_IBOB;
-	set_field(&val,  line_int_freq, UNICAM_LCIE_MASK);
-	reg_write(cfg, UNICAM_ICTL, val);
-	reg_write(cfg, UNICAM_STA, UNICAM_STA_MASK_ALL);
-	reg_write(cfg, UNICAM_ISTA, UNICAM_ISTA_MASK_ALL);
+	set_field(&val, line_int_freq, UNICAM_LCIE_MASK);
+	reg_write(dev, UNICAM_ICTL, val);
+	reg_write(dev, UNICAM_STA, UNICAM_STA_MASK_ALL);
+	reg_write(dev, UNICAM_ISTA, UNICAM_ISTA_MASK_ALL);
 
 	/* tclk_term_en */
-	reg_write_field(cfg, UNICAM_CLT, 2, UNICAM_CLT1_MASK);
+	reg_write_field(dev, UNICAM_CLT, 2, UNICAM_CLT1_MASK);
 	/* tclk_settle */
-	reg_write_field(cfg, UNICAM_CLT, 6, UNICAM_CLT2_MASK);
+	reg_write_field(dev, UNICAM_CLT, 6, UNICAM_CLT2_MASK);
 	/* td_term_en */
-	reg_write_field(cfg, UNICAM_DLT, 2, UNICAM_DLT1_MASK);
+	reg_write_field(dev, UNICAM_DLT, 2, UNICAM_DLT1_MASK);
 	/* ths_settle */
-	reg_write_field(cfg, UNICAM_DLT, 6, UNICAM_DLT2_MASK);
+	reg_write_field(dev, UNICAM_DLT, 6, UNICAM_DLT2_MASK);
 	/* trx_enable */
-	reg_write_field(cfg, UNICAM_DLT, 0, UNICAM_DLT3_MASK);
+	reg_write_field(dev, UNICAM_DLT, 0, UNICAM_DLT3_MASK);
 
-	reg_write_field(cfg, UNICAM_CTRL, 0, UNICAM_SOE);
+	reg_write_field(dev, UNICAM_CTRL, 0, UNICAM_SOE);
 
 	/* Packet compare setup - required to avoid missing frame ends */
 	val = 0;
@@ -1510,7 +1484,7 @@ static void unicam_start_rx(struct unicam_device *dev, dma_addr_t *addr)
 	set_field(&val, 1, UNICAM_CPH);
 	set_field(&val, 0, UNICAM_PCVC_MASK);
 	set_field(&val, 1, UNICAM_PCDT_MASK);
-	reg_write(cfg, UNICAM_CMP0, val);
+	reg_write(dev, UNICAM_CMP0, val);
 
 	/* Enable clock lane and set up terminations */
 	val = 0;
@@ -1528,7 +1502,7 @@ static void unicam_start_rx(struct unicam_device *dev, dma_addr_t *addr)
 		set_field(&val, 1, UNICAM_CLHSE);
 		set_field(&val, 1, UNICAM_CLTRE);
 	}
-	reg_write(cfg, UNICAM_CLK, val);
+	reg_write(dev, UNICAM_CLK, val);
 
 	/*
 	 * Enable required data lanes with appropriate terminations.
@@ -1550,11 +1524,11 @@ static void unicam_start_rx(struct unicam_device *dev, dma_addr_t *addr)
 		set_field(&val, 1, UNICAM_DLHSE);
 		set_field(&val, 1, UNICAM_DLTRE);
 	}
-	reg_write(cfg, UNICAM_DAT0, val);
+	reg_write(dev, UNICAM_DAT0, val);
 
 	if (dev->active_data_lanes == 1)
 		val = 0;
-	reg_write(cfg, UNICAM_DAT1, val);
+	reg_write(dev, UNICAM_DAT1, val);
 
 	if (dev->max_data_lanes > 2) {
 		/*
@@ -1563,216 +1537,87 @@ static void unicam_start_rx(struct unicam_device *dev, dma_addr_t *addr)
 		 */
 		if (dev->active_data_lanes == 2)
 			val = 0;
-		reg_write(cfg, UNICAM_DAT2, val);
+		reg_write(dev, UNICAM_DAT2, val);
 
 		if (dev->active_data_lanes == 3)
 			val = 0;
-		reg_write(cfg, UNICAM_DAT3, val);
+		reg_write(dev, UNICAM_DAT3, val);
 	}
 
-	reg_write(&dev->cfg, UNICAM_IBLS,
+	reg_write(dev, UNICAM_IBLS,
 		  dev->node[IMAGE_PAD].v_fmt.fmt.pix.bytesperline);
 	size = dev->node[IMAGE_PAD].v_fmt.fmt.pix.sizeimage;
-	unicam_wr_dma_addr(&dev->cfg, addr[IMAGE_PAD], size, IMAGE_PAD);
+	unicam_wr_dma_addr(dev, addr[IMAGE_PAD], size, IMAGE_PAD);
 	unicam_set_packing_config(dev);
 	unicam_cfg_image_id(dev);
 
-	val = reg_read(cfg, UNICAM_MISC);
+	val = reg_read(dev, UNICAM_MISC);
 	set_field(&val, 1, UNICAM_FL0);
 	set_field(&val, 1, UNICAM_FL1);
-	reg_write(cfg, UNICAM_MISC, val);
+	reg_write(dev, UNICAM_MISC, val);
 
 	if (dev->node[METADATA_PAD].streaming && dev->sensor_embedded_data) {
 		size = dev->node[METADATA_PAD].v_fmt.fmt.meta.buffersize;
 		unicam_enable_ed(dev);
-		unicam_wr_dma_addr(&dev->cfg, addr[METADATA_PAD], size,
-				   METADATA_PAD);
+		unicam_wr_dma_addr(dev, addr[METADATA_PAD], size, METADATA_PAD);
 	}
 
 	/* Enable peripheral */
-	reg_write_field(cfg, UNICAM_CTRL, 1, UNICAM_CPE);
+	reg_write_field(dev, UNICAM_CTRL, 1, UNICAM_CPE);
 
 	/* Load image pointers */
-	reg_write_field(cfg, UNICAM_ICTL, 1, UNICAM_LIP_MASK);
+	reg_write_field(dev, UNICAM_ICTL, 1, UNICAM_LIP_MASK);
 
 	/* Load embedded data buffer pointers if needed */
 	if (dev->node[METADATA_PAD].streaming && dev->sensor_embedded_data)
-		reg_write_field(cfg, UNICAM_DCS, 1, UNICAM_LDP);
+		reg_write_field(dev, UNICAM_DCS, 1, UNICAM_LDP);
 
 	/*
 	 * Enable trigger only for the first frame to
 	 * sync correctly to the FS from the source.
 	 */
-	reg_write_field(cfg, UNICAM_ICTL, 1, UNICAM_TFC);
+	reg_write_field(dev, UNICAM_ICTL, 1, UNICAM_TFC);
 }
 
 static void unicam_disable(struct unicam_device *dev)
 {
-	struct unicam_cfg *cfg = &dev->cfg;
-
 	/* Analogue lane control disable */
-	reg_write_field(cfg, UNICAM_ANA, 1, UNICAM_DDL);
+	reg_write_field(dev, UNICAM_ANA, 1, UNICAM_DDL);
 
 	/* Stop the output engine */
-	reg_write_field(cfg, UNICAM_CTRL, 1, UNICAM_SOE);
+	reg_write_field(dev, UNICAM_CTRL, 1, UNICAM_SOE);
 
 	/* Disable the data lanes. */
-	reg_write(cfg, UNICAM_DAT0, 0);
-	reg_write(cfg, UNICAM_DAT1, 0);
+	reg_write(dev, UNICAM_DAT0, 0);
+	reg_write(dev, UNICAM_DAT1, 0);
 
 	if (dev->max_data_lanes > 2) {
-		reg_write(cfg, UNICAM_DAT2, 0);
-		reg_write(cfg, UNICAM_DAT3, 0);
+		reg_write(dev, UNICAM_DAT2, 0);
+		reg_write(dev, UNICAM_DAT3, 0);
 	}
 
 	/* Peripheral reset */
-	reg_write_field(cfg, UNICAM_CTRL, 1, UNICAM_CPR);
+	reg_write_field(dev, UNICAM_CTRL, 1, UNICAM_CPR);
 	usleep_range(50, 100);
-	reg_write_field(cfg, UNICAM_CTRL, 0, UNICAM_CPR);
+	reg_write_field(dev, UNICAM_CTRL, 0, UNICAM_CPR);
 
 	/* Disable peripheral */
-	reg_write_field(cfg, UNICAM_CTRL, 0, UNICAM_CPE);
+	reg_write_field(dev, UNICAM_CTRL, 0, UNICAM_CPE);
 
 	/* Clear ED setup */
-	reg_write(cfg, UNICAM_DCS, 0);
+	reg_write(dev, UNICAM_DCS, 0);
 
 	/* Disable all lane clocks */
-	clk_write(cfg, 0);
+	clk_write(dev, 0);
 }
 
-static int unicam_start_streaming(struct vb2_queue *vq, unsigned int count)
+static void unicam_return_buffers(struct unicam_node *node)
 {
-	struct unicam_node *node = vb2_get_drv_priv(vq);
-	struct unicam_device *dev = node->dev;
-	struct unicam_buffer *buf;
-	dma_addr_t buffer_addr[MAX_NODES] = { 0 };
-	int num_nodes_streaming;
-	unsigned long flags;
-	int ret, i;
-
-	node->streaming = 1;
-	if (!unicam_all_nodes_streaming(dev)) {
-		unicam_dbg(3, dev, "Not all nodes are streaming yet.");
-		return 0;
-	}
-
-	dev->sequence = 0;
-	ret = unicam_runtime_get(dev);
-	if (ret < 0) {
-		unicam_dbg(3, dev, "unicam_runtime_get failed\n");
-		return ret;
-	}
-
-	dev->active_data_lanes = dev->max_data_lanes;
-	if (dev->bus_type == V4L2_MBUS_CSI2_DPHY &&
-	    v4l2_subdev_has_op(dev->sensor, video, g_mbus_config)) {
-		struct v4l2_mbus_config mbus_config;
-
-		ret = v4l2_subdev_call(dev->sensor, video, g_mbus_config,
-				       &mbus_config);
-		if (ret < 0) {
-			unicam_dbg(3, dev, "g_mbus_config failed\n");
-			goto err_pm_put;
-		}
-
-		dev->active_data_lanes =
-			(mbus_config.flags & V4L2_MBUS_CSI2_LANE_MASK) >>
-					__ffs(V4L2_MBUS_CSI2_LANE_MASK);
-		if (!dev->active_data_lanes)
-			dev->active_data_lanes = dev->max_data_lanes;
-	}
-	if (dev->active_data_lanes > dev->max_data_lanes) {
-		unicam_err(dev,	"Device has requested %u data lanes, which is >%u configured in DT\n",
-			   dev->active_data_lanes, dev->max_data_lanes);
-		ret = -EINVAL;
-		goto err_pm_put;
-	}
-
-	unicam_dbg(1, dev, "Running with %u data lanes\n",
-		   dev->active_data_lanes);
-
-	ret = clk_set_rate(dev->clock, 100 * 1000 * 1000);
-	if (ret) {
-		unicam_err(dev, "failed to set up clock\n");
-		goto err_pm_put;
-	}
-
-	ret = clk_prepare_enable(dev->clock);
-	if (ret) {
-		unicam_err(dev, "Failed to enable CSI clock: %d\n", ret);
-		goto err_pm_put;
-	}
-
-	num_nodes_streaming = unicam_num_nodes_streaming(dev);
-	for (i = 0; i < num_nodes_streaming; i++) {
-		spin_lock_irqsave(&dev->node[i].dma_queue_lock, flags);
-		buf = list_entry(dev->node[i].dma_queue.active.next,
-				 struct unicam_buffer, list);
-		dev->node[i].cur_frm = buf;
-		dev->node[i].next_frm = buf;
-		list_del(&buf->list);
-		spin_unlock_irqrestore(&dev->node[i].dma_queue_lock, flags);
-		buffer_addr[i] =
-		vb2_dma_contig_plane_dma_addr(&dev->node[i].cur_frm->vb.vb2_buf,
-					      0);
-	}
-
-	unicam_start_rx(dev, buffer_addr);
-
-	ret = v4l2_subdev_call(dev->sensor, video, s_stream, 1);
-	if (ret < 0) {
-		unicam_err(dev, "stream on failed in subdev\n");
-		goto err_disable_unicam;
-	}
-
-	return 0;
-
-err_disable_unicam:
-	node->streaming = 0;
-	unicam_disable(dev);
-	clk_disable_unprepare(dev->clock);
-err_pm_put:
-	unicam_runtime_put(dev);
-
-	return ret;
-}
-
-static void unicam_stop_streaming(struct vb2_queue *vq)
-{
-	struct unicam_node *node = vb2_get_drv_priv(vq);
-	struct unicam_device *dev = node->dev;
-	struct unicam_dmaqueue *dma_q = &node->dma_queue;
 	struct unicam_buffer *buf, *tmp;
 	unsigned long flags;
 
-	node->streaming = 0;
-
-	if (node->pad_id == IMAGE_PAD) {
-		/* Stop streaming the sensor and disable the peripheral.
-		 * We cannot continue streaming embedded data with the
-		 * image pad disabled.
-		 */
-		if (v4l2_subdev_call(dev->sensor, video, s_stream, 0) < 0)
-			unicam_err(dev, "stream off failed in subdev\n");
-
-		unicam_disable(dev);
-		clk_disable_unprepare(dev->clock);
-		unicam_runtime_put(dev);
-
-	} else if (node->pad_id == METADATA_PAD) {
-		/* Allow the hardware to spin in the dummy buffer.
-		 * This is only really needed if the embedded data pad is
-		 * disabled before the image pad.  The 0x3 in the top two bits
-		 * signifies uncached accesses through the Videocore memory
-		 * controller.
-		 */
-		unicam_wr_dma_addr(&dev->cfg, node->dummy_buf_dma_addr,
-				   DUMMY_BUF_SIZE, METADATA_PAD);
-	}
-
-	/* Clear all queued buffers for the node */
 	spin_lock_irqsave(&node->dma_queue_lock, flags);
-	list_for_each_entry_safe(buf, tmp, &dma_q->active, list) {
+	list_for_each_entry_safe(buf, tmp, &node->dma_queue, list) {
 		list_del(&buf->list);
 		vb2_buffer_done(&buf->vb.vb2_buf, VB2_BUF_STATE_ERROR);
 	}
@@ -1787,6 +1632,168 @@ static void unicam_stop_streaming(struct vb2_queue *vq)
 	node->cur_frm = NULL;
 	node->next_frm = NULL;
 	spin_unlock_irqrestore(&node->dma_queue_lock, flags);
+}
+
+static int unicam_start_streaming(struct vb2_queue *vq, unsigned int count)
+{
+	struct unicam_node *node = vb2_get_drv_priv(vq);
+	struct unicam_device *dev = node->dev;
+	dma_addr_t buffer_addr[MAX_NODES] = { 0 };
+	unsigned long flags;
+	unsigned int i;
+	int ret;
+
+	node->streaming = true;
+	if (!unicam_all_nodes_streaming(dev)) {
+		unicam_dbg(3, dev, "Not all nodes are streaming yet.");
+		return 0;
+	}
+
+	dev->sequence = 0;
+	ret = unicam_runtime_get(dev);
+	if (ret < 0) {
+		unicam_dbg(3, dev, "unicam_runtime_get failed\n");
+		goto err_streaming;
+	}
+
+	dev->active_data_lanes = dev->max_data_lanes;
+
+	if (dev->bus_type == V4L2_MBUS_CSI2_DPHY) {
+		struct v4l2_mbus_config mbus_config = { 0 };
+
+		ret = v4l2_subdev_call(dev->sensor, pad, get_mbus_config,
+				       0, &mbus_config);
+		if (ret < 0 && ret != -ENOIOCTLCMD) {
+			unicam_dbg(3, dev, "g_mbus_config failed\n");
+			goto err_pm_put;
+		}
+
+		dev->active_data_lanes =
+			(mbus_config.flags & V4L2_MBUS_CSI2_LANE_MASK) >>
+					__ffs(V4L2_MBUS_CSI2_LANE_MASK);
+		if (!dev->active_data_lanes)
+			dev->active_data_lanes = dev->max_data_lanes;
+		if (dev->active_data_lanes > dev->max_data_lanes) {
+			unicam_err(dev, "Device has requested %u data lanes, which is >%u configured in DT\n",
+				   dev->active_data_lanes,
+				   dev->max_data_lanes);
+			ret = -EINVAL;
+			goto err_pm_put;
+		}
+	}
+
+	unicam_dbg(1, dev, "Running with %u data lanes\n",
+		   dev->active_data_lanes);
+
+	ret = clk_set_min_rate(dev->vpu_clock, MIN_VPU_CLOCK_RATE);
+	if (ret) {
+		unicam_err(dev, "failed to set up VPU clock\n");
+		goto err_pm_put;
+	}
+
+	ret = clk_prepare_enable(dev->vpu_clock);
+	if (ret) {
+		unicam_err(dev, "Failed to enable VPU clock: %d\n", ret);
+		goto err_pm_put;
+	}
+
+	ret = clk_set_rate(dev->clock, 100 * 1000 * 1000);
+	if (ret) {
+		unicam_err(dev, "failed to set up CSI clock\n");
+		goto err_vpu_clock;
+	}
+
+	ret = clk_prepare_enable(dev->clock);
+	if (ret) {
+		unicam_err(dev, "Failed to enable CSI clock: %d\n", ret);
+		goto err_vpu_clock;
+	}
+
+	for (i = 0; i < ARRAY_SIZE(dev->node); i++) {
+		struct unicam_buffer *buf;
+
+		if (!dev->node[i].streaming)
+			continue;
+
+		spin_lock_irqsave(&dev->node[i].dma_queue_lock, flags);
+		buf = list_first_entry(&dev->node[i].dma_queue,
+				       struct unicam_buffer, list);
+		dev->node[i].cur_frm = buf;
+		dev->node[i].next_frm = buf;
+		list_del(&buf->list);
+		spin_unlock_irqrestore(&dev->node[i].dma_queue_lock, flags);
+
+		buffer_addr[i] =
+			vb2_dma_contig_plane_dma_addr(&buf->vb.vb2_buf, 0);
+	}
+
+	unicam_start_rx(dev, buffer_addr);
+
+	ret = v4l2_subdev_call(dev->sensor, video, s_stream, 1);
+	if (ret < 0) {
+		unicam_err(dev, "stream on failed in subdev\n");
+		goto err_disable_unicam;
+	}
+
+	return 0;
+
+err_disable_unicam:
+	unicam_disable(dev);
+	clk_disable_unprepare(dev->clock);
+err_vpu_clock:
+	ret = clk_set_min_rate(dev->vpu_clock, 0);
+	if (ret)
+		unicam_err(dev, "failed to reset the VPU clock\n");
+	clk_disable_unprepare(dev->vpu_clock);
+err_pm_put:
+	unicam_runtime_put(dev);
+err_streaming:
+	unicam_return_buffers(node);
+	node->streaming = false;
+
+	return ret;
+}
+
+static void unicam_stop_streaming(struct vb2_queue *vq)
+{
+	struct unicam_node *node = vb2_get_drv_priv(vq);
+	struct unicam_device *dev = node->dev;
+
+	node->streaming = false;
+
+	if (node->pad_id == IMAGE_PAD) {
+		int ret;
+
+		/*
+		 * Stop streaming the sensor and disable the peripheral.
+		 * We cannot continue streaming embedded data with the
+		 * image pad disabled.
+		 */
+		if (v4l2_subdev_call(dev->sensor, video, s_stream, 0) < 0)
+			unicam_err(dev, "stream off failed in subdev\n");
+
+		unicam_disable(dev);
+
+		ret = clk_set_min_rate(dev->vpu_clock, 0);
+		if (ret)
+			unicam_err(dev, "failed to reset the min VPU clock\n");
+
+		clk_disable_unprepare(dev->vpu_clock);
+		clk_disable_unprepare(dev->clock);
+		unicam_runtime_put(dev);
+
+	} else if (node->pad_id == METADATA_PAD) {
+		/*
+		 * Allow the hardware to spin in the dummy buffer.
+		 * This is only really needed if the embedded data pad is
+		 * disabled before the image pad.
+		 */
+		unicam_wr_dma_addr(dev, node->dummy_buf_dma_addr,
+				   DUMMY_BUF_SIZE, METADATA_PAD);
+	}
+
+	/* Clear all queued buffers for the node */
+	unicam_return_buffers(node);
 }
 
 static int unicam_enum_input(struct file *file, void *priv,
@@ -1910,6 +1917,9 @@ static int unicam_s_selection(struct file *file, void *priv,
 		.r = sel->r,
 	};
 
+	if (sel->type != V4L2_BUF_TYPE_VIDEO_CAPTURE)
+		return -EINVAL;
+
 	return v4l2_subdev_call(dev->sensor, pad, set_selection, NULL, &sdsel);
 }
 
@@ -1923,6 +1933,9 @@ static int unicam_g_selection(struct file *file, void *priv,
 		.target = sel->target,
 	};
 	int ret;
+
+	if (sel->type != V4L2_BUF_TYPE_VIDEO_CAPTURE)
+		return -EINVAL;
 
 	ret = v4l2_subdev_call(dev->sensor, pad, get_selection, NULL, &sdsel);
 	if (!ret)
@@ -1940,19 +1953,14 @@ static int unicam_enum_framesizes(struct file *file, void *priv,
 	struct v4l2_subdev_frame_size_enum fse;
 	int ret;
 
-	if (node->pad_id == IMAGE_PAD) {
-		/* check for valid format */
-		fmt = find_format_by_pix(dev, fsize->pixel_format);
-		if (!fmt) {
-			unicam_dbg(3, dev, "Invalid pixel code: %x\n",
-				   fsize->pixel_format);
-			return -EINVAL;
-		}
-		fse.code = fmt->code;
-	} else {
-		/* This pad is for embedded data, so just set the format */
-		fse.code = MEDIA_BUS_FMT_SENSOR_DATA;
+	/* check for valid format */
+	fmt = find_format_by_pix(dev, fsize->pixel_format);
+	if (!fmt) {
+		unicam_dbg(3, dev, "Invalid pixel code: %x\n",
+			   fsize->pixel_format);
+		return -EINVAL;
 	}
+	fse.code = fmt->code;
 
 	fse.which = V4L2_SUBDEV_FORMAT_ACTIVE;
 	fse.index = fsize->index;
@@ -2099,7 +2107,6 @@ static int unicam_log_status(struct file *file, void *fh)
 {
 	struct unicam_node *node = video_drvdata(file);
 	struct unicam_device *dev = node->dev;
-	struct unicam_cfg *cfg = &dev->cfg;
 	u32 reg;
 
 	/* status for sub devices */
@@ -2111,18 +2118,18 @@ static int unicam_log_status(struct file *file, void *fh)
 	unicam_info(dev, "Mediabus format:     %08x\n", node->fmt->code);
 	unicam_info(dev, "V4L2 format:         %08x\n",
 		    node->v_fmt.fmt.pix.pixelformat);
-	reg = reg_read(&dev->cfg, UNICAM_IPIPE);
+	reg = reg_read(dev, UNICAM_IPIPE);
 	unicam_info(dev, "Unpacking/packing:   %u / %u\n",
 		    get_field(reg, UNICAM_PUM_MASK),
 		    get_field(reg, UNICAM_PPM_MASK));
 	unicam_info(dev, "----Live data----\n");
 	unicam_info(dev, "Programmed stride:   %4u\n",
-		    reg_read(cfg, UNICAM_IBLS));
+		    reg_read(dev, UNICAM_IBLS));
 	unicam_info(dev, "Detected resolution: %ux%u\n",
-		    reg_read(cfg, UNICAM_IHSTA),
-		    reg_read(cfg, UNICAM_IVSTA));
+		    reg_read(dev, UNICAM_IHSTA),
+		    reg_read(dev, UNICAM_IVSTA));
 	unicam_info(dev, "Write pointer:       %08x\n",
-		    reg_read(cfg, UNICAM_IBWP));
+		    reg_read(dev, UNICAM_IBWP));
 
 	return 0;
 }
@@ -2130,8 +2137,7 @@ static int unicam_log_status(struct file *file, void *fh)
 static void unicam_notify(struct v4l2_subdev *sd,
 			  unsigned int notification, void *arg)
 {
-	struct unicam_device *dev =
-		container_of(sd->v4l2_dev, struct unicam_device, v4l2_dev);
+	struct unicam_device *dev = to_unicam_device(sd->v4l2_dev);
 
 	switch (notification) {
 	case V4L2_DEVICE_NOTIFY_EVENT:
@@ -2153,10 +2159,10 @@ static const struct vb2_ops unicam_video_qops = {
 };
 
 /*
- * unicam_open : This function is based on the v4l2_fh_open helper function.
- * It has been augmented to handle sensor subdevice power management,
+ * unicam_v4l2_open : This function is based on the v4l2_fh_open helper
+ * function. It has been augmented to handle sensor subdevice power management,
  */
-static int unicam_open(struct file *file)
+static int unicam_v4l2_open(struct file *file)
 {
 	struct unicam_node *node = video_drvdata(file);
 	struct unicam_device *dev = node->dev;
@@ -2189,7 +2195,7 @@ unlock:
 	return ret;
 }
 
-static int unicam_release(struct file *file)
+static int unicam_v4l2_release(struct file *file)
 {
 	struct unicam_node *node = video_drvdata(file);
 	struct unicam_device *dev = node->dev;
@@ -2215,8 +2221,8 @@ static int unicam_release(struct file *file)
 /* unicam capture driver file operations */
 static const struct v4l2_file_operations unicam_fops = {
 	.owner		= THIS_MODULE,
-	.open           = unicam_open,
-	.release        = unicam_release,
+	.open		= unicam_v4l2_open,
+	.release	= unicam_v4l2_release,
 	.read		= vb2_fop_read,
 	.poll		= vb2_fop_poll,
 	.unlocked_ioctl	= video_ioctl2,
@@ -2233,8 +2239,8 @@ static const struct v4l2_ioctl_ops unicam_ioctl_ops = {
 
 	.vidioc_enum_fmt_meta_cap	= unicam_enum_fmt_meta_cap,
 	.vidioc_g_fmt_meta_cap		= unicam_g_fmt_meta_cap,
-	.vidioc_s_fmt_meta_cap		= unicam_s_fmt_meta_cap,
-	.vidioc_try_fmt_meta_cap	= unicam_try_fmt_meta_cap,
+	.vidioc_s_fmt_meta_cap		= unicam_g_fmt_meta_cap,
+	.vidioc_try_fmt_meta_cap	= unicam_g_fmt_meta_cap,
 
 	.vidioc_enum_input		= unicam_enum_input,
 	.vidioc_g_input			= unicam_g_input,
@@ -2282,8 +2288,7 @@ unicam_async_bound(struct v4l2_async_notifier *notifier,
 		   struct v4l2_subdev *subdev,
 		   struct v4l2_async_subdev *asd)
 {
-	struct unicam_device *unicam = container_of(notifier->v4l2_dev,
-					       struct unicam_device, v4l2_dev);
+	struct unicam_device *unicam = to_unicam_device(notifier->v4l2_dev);
 
 	if (unicam->sensor) {
 		unicam_info(unicam, "Rejecting subdev %s (Already set!!)",
@@ -2297,6 +2302,37 @@ unicam_async_bound(struct v4l2_async_notifier *notifier,
 	return 0;
 }
 
+static void unicam_release(struct kref *kref)
+{
+	struct unicam_device *unicam =
+		container_of(kref, struct unicam_device, kref);
+
+	v4l2_ctrl_handler_free(&unicam->ctrl_handler);
+	media_device_cleanup(&unicam->mdev);
+
+	if (unicam->sensor_config)
+		v4l2_subdev_free_pad_config(unicam->sensor_config);
+
+	kfree(unicam);
+}
+
+static void unicam_put(struct unicam_device *unicam)
+{
+	kref_put(&unicam->kref, unicam_release);
+}
+
+static void unicam_get(struct unicam_device *unicam)
+{
+	kref_get(&unicam->kref);
+}
+
+static void unicam_node_release(struct video_device *vdev)
+{
+	struct unicam_node *node = video_get_drvdata(vdev);
+
+	unicam_put(node->dev);
+}
+
 static int register_node(struct unicam_device *unicam, struct unicam_node *node,
 			 enum v4l2_buf_type type, int pad_id)
 {
@@ -2306,7 +2342,7 @@ static int register_node(struct unicam_device *unicam, struct unicam_node *node,
 	const struct unicam_fmt *fmt;
 	int ret;
 
-	if (unicam->sensor_embedded_data || pad_id != METADATA_PAD) {
+	if (pad_id == IMAGE_PAD) {
 		ret = __subdev_get_format(unicam, &mbus_fmt, pad_id);
 		if (ret) {
 			unicam_err(unicam, "Failed to get_format - ret %d\n",
@@ -2316,7 +2352,8 @@ static int register_node(struct unicam_device *unicam, struct unicam_node *node,
 
 		fmt = find_format_by_code(mbus_fmt.code);
 		if (!fmt) {
-			/* Find the first format that the sensor and unicam both
+			/*
+			 * Find the first format that the sensor and unicam both
 			 * support
 			 */
 			fmt = get_first_supported_format(unicam);
@@ -2337,22 +2374,18 @@ static int register_node(struct unicam_device *unicam, struct unicam_node *node,
 			if (ret)
 				return -EINVAL;
 		}
+
+		node->v_fmt.fmt.pix.pixelformat = fmt->fourcc ? fmt->fourcc
+						: fmt->repacked_fourcc;
 	} else {
 		/* Fix this node format as embedded data. */
 		fmt = find_format_by_code(MEDIA_BUS_FMT_SENSOR_DATA);
+		node->v_fmt.fmt.meta.dataformat = fmt->fourcc;
 	}
 
 	node->dev = unicam;
 	node->pad_id = pad_id;
 	node->fmt = fmt;
-	if (fmt->fourcc) {
-		if (fmt->fourcc != V4L2_META_FMT_SENSOR_DATA)
-			node->v_fmt.fmt.pix.pixelformat = fmt->fourcc;
-		else
-			node->v_fmt.fmt.meta.dataformat = fmt->fourcc;
-	} else {
-		node->v_fmt.fmt.pix.pixelformat = fmt->repacked_fourcc;
-	}
 
 	/* Read current subdev format */
 	unicam_reset_format(node);
@@ -2381,7 +2414,7 @@ static int register_node(struct unicam_device *unicam, struct unicam_node *node,
 	vdev = &node->video_dev;
 	if (pad_id == IMAGE_PAD) {
 		/* Add controls from the subdevice */
-		ret = v4l2_ctrl_add_handler(&node->ctrl_handler,
+		ret = v4l2_ctrl_add_handler(&unicam->ctrl_handler,
 					    unicam->sensor->ctrl_handler, NULL,
 					    true);
 		if (ret < 0)
@@ -2391,8 +2424,8 @@ static int register_node(struct unicam_device *unicam, struct unicam_node *node,
 		 * If the sensor subdevice has any controls, associate the node
 		 *  with the ctrl handler to allow access from userland.
 		 */
-		if (!list_empty(&node->ctrl_handler.ctrls))
-			vdev->ctrl_handler = &node->ctrl_handler;
+		if (!list_empty(&unicam->ctrl_handler.ctrls))
+			vdev->ctrl_handler = &unicam->ctrl_handler;
 	}
 
 	q = &node->buffer_queue;
@@ -2404,7 +2437,7 @@ static int register_node(struct unicam_device *unicam, struct unicam_node *node,
 	q->buf_struct_size = sizeof(struct unicam_buffer);
 	q->timestamp_flags = V4L2_BUF_FLAG_TIMESTAMP_MONOTONIC;
 	q->lock = &node->lock;
-	q->min_buffers_needed = 1;
+	q->min_buffers_needed = 2;
 	q->dev = &unicam->pdev->dev;
 
 	ret = vb2_queue_init(q);
@@ -2413,9 +2446,9 @@ static int register_node(struct unicam_device *unicam, struct unicam_node *node,
 		return ret;
 	}
 
-	INIT_LIST_HEAD(&node->dma_queue.active);
+	INIT_LIST_HEAD(&node->dma_queue);
 
-	vdev->release = video_device_release_empty;
+	vdev->release = unicam_node_release;
 	vdev->fops = &unicam_fops;
 	vdev->ioctl_ops = &unicam_ioctl_ops;
 	vdev->v4l2_dev = &unicam->v4l2_dev;
@@ -2423,40 +2456,43 @@ static int register_node(struct unicam_device *unicam, struct unicam_node *node,
 	vdev->queue = q;
 	vdev->lock = &node->lock;
 	vdev->device_caps = (pad_id == IMAGE_PAD) ?
-			    (V4L2_CAP_VIDEO_CAPTURE | V4L2_CAP_STREAMING) :
-			    (V4L2_CAP_META_CAPTURE | V4L2_CAP_STREAMING);
+				V4L2_CAP_VIDEO_CAPTURE : V4L2_CAP_META_CAPTURE;
+	vdev->device_caps |= V4L2_CAP_READWRITE | V4L2_CAP_STREAMING;
 
 	/* Define the device names */
 	snprintf(vdev->name, sizeof(vdev->name), "%s-%s", UNICAM_MODULE_NAME,
-		 node->pad_id == IMAGE_PAD ? "image" : "embedded");
+		 pad_id == IMAGE_PAD ? "image" : "embedded");
 
 	video_set_drvdata(vdev, node);
-	vdev->entity.flags |= MEDIA_ENT_FL_DEFAULT;
+	if (pad_id == IMAGE_PAD)
+		vdev->entity.flags |= MEDIA_ENT_FL_DEFAULT;
+	node->pad.flags = MEDIA_PAD_FL_SINK;
+	media_entity_pads_init(&vdev->entity, 1, &node->pad);
 
 	node->dummy_buf_cpu_addr = dma_alloc_coherent(&unicam->pdev->dev,
 						      DUMMY_BUF_SIZE,
 						      &node->dummy_buf_dma_addr,
-						      GFP_ATOMIC);
+						      GFP_KERNEL);
 	if (!node->dummy_buf_cpu_addr) {
 		unicam_err(unicam, "Unable to allocate dummy buffer.\n");
 		return -ENOMEM;
 	}
 
-	if (node->pad_id == METADATA_PAD) {
+	if (pad_id == METADATA_PAD) {
 		v4l2_disable_ioctl(vdev, VIDIOC_DQEVENT);
 		v4l2_disable_ioctl(vdev, VIDIOC_SUBSCRIBE_EVENT);
 		v4l2_disable_ioctl(vdev, VIDIOC_UNSUBSCRIBE_EVENT);
 	}
-	if (node->pad_id == METADATA_PAD ||
+	if (pad_id == METADATA_PAD ||
 	    !v4l2_subdev_has_op(unicam->sensor, video, s_std)) {
 		v4l2_disable_ioctl(&node->video_dev, VIDIOC_S_STD);
 		v4l2_disable_ioctl(&node->video_dev, VIDIOC_G_STD);
 		v4l2_disable_ioctl(&node->video_dev, VIDIOC_ENUMSTD);
 	}
-	if (node->pad_id == METADATA_PAD ||
+	if (pad_id == METADATA_PAD ||
 	    !v4l2_subdev_has_op(unicam->sensor, video, querystd))
 		v4l2_disable_ioctl(&node->video_dev, VIDIOC_QUERYSTD);
-	if (node->pad_id == METADATA_PAD ||
+	if (pad_id == METADATA_PAD ||
 	    !v4l2_subdev_has_op(unicam->sensor, video, s_dv_timings)) {
 		v4l2_disable_ioctl(&node->video_dev, VIDIOC_S_EDID);
 		v4l2_disable_ioctl(&node->video_dev, VIDIOC_G_EDID);
@@ -2466,18 +2502,18 @@ static int register_node(struct unicam_device *unicam, struct unicam_node *node,
 		v4l2_disable_ioctl(&node->video_dev, VIDIOC_ENUM_DV_TIMINGS);
 		v4l2_disable_ioctl(&node->video_dev, VIDIOC_QUERY_DV_TIMINGS);
 	}
-	if (node->pad_id == METADATA_PAD ||
+	if (pad_id == METADATA_PAD ||
 	    !v4l2_subdev_has_op(unicam->sensor, pad, enum_frame_interval))
 		v4l2_disable_ioctl(&node->video_dev,
 				   VIDIOC_ENUM_FRAMEINTERVALS);
-	if (node->pad_id == METADATA_PAD ||
+	if (pad_id == METADATA_PAD ||
 	    !v4l2_subdev_has_op(unicam->sensor, video, g_frame_interval))
 		v4l2_disable_ioctl(&node->video_dev, VIDIOC_G_PARM);
-	if (node->pad_id == METADATA_PAD ||
+	if (pad_id == METADATA_PAD ||
 	    !v4l2_subdev_has_op(unicam->sensor, video, s_frame_interval))
 		v4l2_disable_ioctl(&node->video_dev, VIDIOC_S_PARM);
 
-	if (node->pad_id == METADATA_PAD ||
+	if (pad_id == METADATA_PAD ||
 	    !v4l2_subdev_has_op(unicam->sensor, pad, enum_frame_size))
 		v4l2_disable_ioctl(&node->video_dev, VIDIOC_ENUM_FRAMESIZES);
 
@@ -2489,20 +2525,29 @@ static int register_node(struct unicam_device *unicam, struct unicam_node *node,
 	    !v4l2_subdev_has_op(unicam->sensor, pad, get_selection))
 		v4l2_disable_ioctl(&node->video_dev, VIDIOC_G_SELECTION);
 
-	ret = video_register_device(vdev, VFL_TYPE_GRABBER, -1);
+	ret = video_register_device(vdev, VFL_TYPE_VIDEO, -1);
 	if (ret) {
-		unicam_err(unicam, "Unable to register video device.\n");
+		unicam_err(unicam, "Unable to register video device %s\n",
+			   vdev->name);
 		return ret;
 	}
-	node->registered = 1;
 
-	if (unicam->sensor_embedded_data) {
+	/*
+	 * Acquire a reference to unicam, which will be released when the video
+	 * device will be unregistered and userspace will have closed all open
+	 * file handles.
+	 */
+	unicam_get(unicam);
+	node->registered = true;
+
+	if (pad_id != METADATA_PAD || unicam->sensor_embedded_data) {
 		ret = media_create_pad_link(&unicam->sensor->entity, pad_id,
 					    &node->video_dev.entity, 0,
 					    MEDIA_LNK_FL_ENABLED |
 					    MEDIA_LNK_FL_IMMUTABLE);
 		if (ret)
-			unicam_err(unicam, "Unable to create pad links.\n");
+			unicam_err(unicam, "Unable to create pad link for %s\n",
+				   vdev->name);
 	}
 
 	return ret;
@@ -2510,19 +2555,20 @@ static int register_node(struct unicam_device *unicam, struct unicam_node *node,
 
 static void unregister_nodes(struct unicam_device *unicam)
 {
-	struct unicam_node *node;
-	int i;
+	unsigned int i;
 
-	for (i = 0; i < MAX_NODES; i++) {
-		node = &unicam->node[i];
+	for (i = 0; i < ARRAY_SIZE(unicam->node); i++) {
+		struct unicam_node *node = &unicam->node[i];
+
 		if (node->dummy_buf_cpu_addr) {
 			dma_free_coherent(&unicam->pdev->dev, DUMMY_BUF_SIZE,
 					  node->dummy_buf_cpu_addr,
 					  node->dummy_buf_dma_addr);
 		}
+
 		if (node->registered) {
+			node->registered = false;
 			video_unregister_device(&node->video_dev);
-			node->registered = 0;
 		}
 	}
 }
@@ -2530,8 +2576,6 @@ static void unregister_nodes(struct unicam_device *unicam)
 static int unicam_probe_complete(struct unicam_device *unicam)
 {
 	int ret;
-
-	v4l2_set_subdev_hostdata(unicam->sensor, unicam);
 
 	unicam->v4l2_dev.notify = unicam_notify;
 
@@ -2544,14 +2588,14 @@ static int unicam_probe_complete(struct unicam_device *unicam)
 	ret = register_node(unicam, &unicam->node[IMAGE_PAD],
 			    V4L2_BUF_TYPE_VIDEO_CAPTURE, IMAGE_PAD);
 	if (ret) {
-		unicam_err(unicam, "Unable to register subdev node 0.\n");
+		unicam_err(unicam, "Unable to register image video device.\n");
 		goto unregister;
 	}
 
 	ret = register_node(unicam, &unicam->node[METADATA_PAD],
 			    V4L2_BUF_TYPE_META_CAPTURE, METADATA_PAD);
 	if (ret) {
-		unicam_err(unicam, "Unable to register subdev node 1.\n");
+		unicam_err(unicam, "Unable to register metadata video device.\n");
 		goto unregister;
 	}
 
@@ -2561,18 +2605,23 @@ static int unicam_probe_complete(struct unicam_device *unicam)
 		goto unregister;
 	}
 
+	/*
+	 * Release the initial reference, all references are now owned by the
+	 * video devices.
+	 */
+	unicam_put(unicam);
 	return 0;
 
 unregister:
 	unregister_nodes(unicam);
+	unicam_put(unicam);
 
 	return ret;
 }
 
 static int unicam_async_complete(struct v4l2_async_notifier *notifier)
 {
-	struct unicam_device *unicam = container_of(notifier->v4l2_dev,
-					struct unicam_device, v4l2_dev);
+	struct unicam_device *unicam = to_unicam_device(notifier->v4l2_dev);
 
 	return unicam_probe_complete(unicam);
 }
@@ -2585,186 +2634,179 @@ static const struct v4l2_async_notifier_operations unicam_async_ops = {
 static int of_unicam_connect_subdevs(struct unicam_device *dev)
 {
 	struct platform_device *pdev = dev->pdev;
-	struct device_node *parent, *ep_node = NULL, *remote_ep = NULL,
-			*sensor_node = NULL;
-	struct v4l2_fwnode_endpoint *ep;
-	struct v4l2_async_subdev *asd;
-	unsigned int peripheral_data_lanes;
-	int ret = -EINVAL;
+	struct v4l2_fwnode_endpoint ep = { };
+	struct device_node *ep_node;
+	struct device_node *sensor_node;
 	unsigned int lane;
+	int ret = -EINVAL;
 
-	parent = pdev->dev.of_node;
+	if (of_property_read_u32(pdev->dev.of_node, "brcm,num-data-lanes",
+				 &dev->max_data_lanes) < 0) {
+		unicam_err(dev, "number of data lanes not set\n");
+		return -EINVAL;
+	}
 
-	asd = &dev->asd;
-	ep = &dev->endpoint;
-
-	ep_node = of_graph_get_next_endpoint(parent, NULL);
+	/* Get the local endpoint and remote device. */
+	ep_node = of_graph_get_next_endpoint(pdev->dev.of_node, NULL);
 	if (!ep_node) {
 		unicam_dbg(3, dev, "can't get next endpoint\n");
-		goto cleanup_exit;
+		return -EINVAL;
 	}
 
-	unicam_dbg(3, dev, "ep_node is %s\n", ep_node->name);
-
-	v4l2_fwnode_endpoint_parse(of_fwnode_handle(ep_node), ep);
-
-	for (lane = 0; lane < ep->bus.mipi_csi2.num_data_lanes; lane++) {
-		if (ep->bus.mipi_csi2.data_lanes[lane] != lane + 1) {
-			unicam_err(dev, "Local endpoint - data lane reordering not supported\n");
-			goto cleanup_exit;
-		}
-	}
-
-	peripheral_data_lanes = ep->bus.mipi_csi2.num_data_lanes;
+	unicam_dbg(3, dev, "ep_node is %pOF\n", ep_node);
 
 	sensor_node = of_graph_get_remote_port_parent(ep_node);
 	if (!sensor_node) {
 		unicam_dbg(3, dev, "can't get remote parent\n");
 		goto cleanup_exit;
 	}
-	unicam_dbg(3, dev, "sensor_node is %s\n", sensor_node->name);
-	asd->match_type = V4L2_ASYNC_MATCH_FWNODE;
-	asd->match.fwnode = of_fwnode_handle(sensor_node);
 
-	remote_ep = of_graph_get_remote_endpoint(ep_node);
-	if (!remote_ep) {
-		unicam_dbg(3, dev, "can't get remote-endpoint\n");
-		goto cleanup_exit;
-	}
-	unicam_dbg(3, dev, "remote_ep is %s\n", remote_ep->name);
-	v4l2_fwnode_endpoint_parse(of_fwnode_handle(remote_ep), ep);
-	unicam_dbg(3, dev, "parsed remote_ep to endpoint. nr_of_link_frequencies %u, bus_type %u\n",
-		   ep->nr_of_link_frequencies, ep->bus_type);
+	unicam_dbg(1, dev, "found subdevice %pOF\n", sensor_node);
 
-	switch (ep->bus_type) {
+	/* Parse the local endpoint and validate its configuration. */
+	v4l2_fwnode_endpoint_parse(of_fwnode_handle(ep_node), &ep);
+
+	unicam_dbg(3, dev, "parsed local endpoint, bus_type %u\n",
+		   ep.bus_type);
+
+	dev->bus_type = ep.bus_type;
+
+	switch (ep.bus_type) {
 	case V4L2_MBUS_CSI2_DPHY:
-		if (ep->bus.mipi_csi2.num_data_lanes >
-				peripheral_data_lanes) {
-			unicam_err(dev, "Subdevice %s wants too many data lanes (%u > %u)\n",
-				   sensor_node->name,
-				   ep->bus.mipi_csi2.num_data_lanes,
-				   peripheral_data_lanes);
+		switch (ep.bus.mipi_csi2.num_data_lanes) {
+		case 1:
+		case 2:
+		case 4:
+			break;
+
+		default:
+			unicam_err(dev, "subdevice %pOF: %u data lanes not supported\n",
+				   sensor_node,
+				   ep.bus.mipi_csi2.num_data_lanes);
 			goto cleanup_exit;
 		}
-		for (lane = 0;
-		     lane < ep->bus.mipi_csi2.num_data_lanes;
-		     lane++) {
-			if (ep->bus.mipi_csi2.data_lanes[lane] != lane + 1) {
-				unicam_err(dev, "Subdevice %s - incompatible data lane config\n",
-					   sensor_node->name);
+
+		for (lane = 0; lane < ep.bus.mipi_csi2.num_data_lanes; lane++) {
+			if (ep.bus.mipi_csi2.data_lanes[lane] != lane + 1) {
+				unicam_err(dev, "subdevice %pOF: data lanes reordering not supported\n",
+					   sensor_node);
 				goto cleanup_exit;
 			}
 		}
-		dev->max_data_lanes = ep->bus.mipi_csi2.num_data_lanes;
-		dev->bus_flags = ep->bus.mipi_csi2.flags;
+
+		if (ep.bus.mipi_csi2.num_data_lanes > dev->max_data_lanes) {
+			unicam_err(dev, "subdevice requires %u data lanes when %u are supported\n",
+				   ep.bus.mipi_csi2.num_data_lanes,
+				   dev->max_data_lanes);
+		}
+
+		dev->max_data_lanes = ep.bus.mipi_csi2.num_data_lanes;
+		dev->bus_flags = ep.bus.mipi_csi2.flags;
+
 		break;
+
 	case V4L2_MBUS_CCP2:
-		if (ep->bus.mipi_csi1.clock_lane != 0 ||
-		    ep->bus.mipi_csi1.data_lane != 1) {
-			unicam_err(dev, "Subdevice %s incompatible lane config\n",
-				   sensor_node->name);
+		if (ep.bus.mipi_csi1.clock_lane != 0 ||
+		    ep.bus.mipi_csi1.data_lane != 1) {
+			unicam_err(dev, "subdevice %pOF: unsupported lanes configuration\n",
+				   sensor_node);
 			goto cleanup_exit;
 		}
+
 		dev->max_data_lanes = 1;
-		dev->bus_flags = ep->bus.mipi_csi1.strobe;
+		dev->bus_flags = ep.bus.mipi_csi1.strobe;
 		break;
+
 	default:
 		/* Unsupported bus type */
-		unicam_err(dev, "sub-device %s is not a CSI2 or CCP2 device %d\n",
-			   sensor_node->name, ep->bus_type);
+		unicam_err(dev, "subdevice %pOF: unsupported bus type %u\n",
+			   sensor_node, ep.bus_type);
 		goto cleanup_exit;
 	}
 
-	/* Store bus type - CSI2 or CCP2 */
-	dev->bus_type = ep->bus_type;
-	unicam_dbg(3, dev, "bus_type is %d\n", dev->bus_type);
+	unicam_dbg(3, dev, "subdevice %pOF: %s bus, %u data lanes, flags=0x%08x\n",
+		   sensor_node,
+		   dev->bus_type == V4L2_MBUS_CSI2_DPHY ? "CSI-2" : "CCP2",
+		   dev->max_data_lanes, dev->bus_flags);
 
-	/* Store Virtual Channel number */
-	dev->virtual_channel = ep->base.id;
-
-	unicam_dbg(3, dev, "v4l2-endpoint: %s\n",
-		   dev->bus_type == V4L2_MBUS_CSI2_DPHY ? "CSI2" : "CCP2");
-	unicam_dbg(3, dev, "Virtual Channel=%d\n", dev->virtual_channel);
-	if (dev->bus_type == V4L2_MBUS_CSI2_DPHY)
-		unicam_dbg(3, dev, "flags=0x%08x\n", ep->bus.mipi_csi2.flags);
-	unicam_dbg(3, dev, "num_data_lanes=%d\n", dev->max_data_lanes);
-
-	unicam_dbg(1, dev, "found sub-device %s\n", sensor_node->name);
-
+	/* Initialize and register the async notifier. */
 	v4l2_async_notifier_init(&dev->notifier);
+	dev->notifier.ops = &unicam_async_ops;
 
-	ret = v4l2_async_notifier_add_subdev(&dev->notifier, asd);
+	dev->asd.match_type = V4L2_ASYNC_MATCH_FWNODE;
+	dev->asd.match.fwnode = of_fwnode_handle(sensor_node);
+	ret = v4l2_async_notifier_add_subdev(&dev->notifier, &dev->asd);
 	if (ret) {
-		unicam_err(dev, "Error adding subdevice - ret %d\n", ret);
+		unicam_err(dev, "Error adding subdevice: %d\n", ret);
 		goto cleanup_exit;
 	}
 
-	dev->notifier.ops = &unicam_async_ops;
-	ret = v4l2_async_notifier_register(&dev->v4l2_dev,
-					   &dev->notifier);
+	ret = v4l2_async_notifier_register(&dev->v4l2_dev, &dev->notifier);
 	if (ret) {
-		unicam_err(dev, "Error registering async notifier - ret %d\n",
-			   ret);
+		unicam_err(dev, "Error registering async notifier: %d\n", ret);
 		ret = -EINVAL;
 	}
 
 cleanup_exit:
-	if (remote_ep)
-		of_node_put(remote_ep);
-	if (sensor_node)
-		of_node_put(sensor_node);
-	if (ep_node)
-		of_node_put(ep_node);
+	of_node_put(sensor_node);
+	of_node_put(ep_node);
 
 	return ret;
 }
 
 static int unicam_probe(struct platform_device *pdev)
 {
-	struct unicam_cfg *unicam_cfg;
 	struct unicam_device *unicam;
-	struct v4l2_ctrl_handler *hdl;
-	struct resource	*res;
 	int ret;
 
-	unicam = devm_kzalloc(&pdev->dev, sizeof(*unicam), GFP_KERNEL);
+	unicam = kzalloc(sizeof(*unicam), GFP_KERNEL);
 	if (!unicam)
 		return -ENOMEM;
 
+	kref_init(&unicam->kref);
 	unicam->pdev = pdev;
-	unicam_cfg = &unicam->cfg;
 
-	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	unicam_cfg->base = devm_ioremap_resource(&pdev->dev, res);
-	if (IS_ERR(unicam_cfg->base)) {
+	unicam->base = devm_platform_ioremap_resource(pdev, 0);
+	if (IS_ERR(unicam->base)) {
 		unicam_err(unicam, "Failed to get main io block\n");
-		return PTR_ERR(unicam_cfg->base);
+		ret = PTR_ERR(unicam->base);
+		goto err_unicam_put;
 	}
 
-	res = platform_get_resource(pdev, IORESOURCE_MEM, 1);
-	unicam_cfg->clk_gate_base = devm_ioremap_resource(&pdev->dev, res);
-	if (IS_ERR(unicam_cfg->clk_gate_base)) {
+	unicam->clk_gate_base = devm_platform_ioremap_resource(pdev, 1);
+	if (IS_ERR(unicam->clk_gate_base)) {
 		unicam_err(unicam, "Failed to get 2nd io block\n");
-		return PTR_ERR(unicam_cfg->clk_gate_base);
+		ret = PTR_ERR(unicam->clk_gate_base);
+		goto err_unicam_put;
 	}
 
 	unicam->clock = devm_clk_get(&pdev->dev, "lp");
 	if (IS_ERR(unicam->clock)) {
-		unicam_err(unicam, "Failed to get clock\n");
-		return PTR_ERR(unicam->clock);
+		unicam_err(unicam, "Failed to get lp clock\n");
+		ret = PTR_ERR(unicam->clock);
+		goto err_unicam_put;
+	}
+
+	unicam->vpu_clock = devm_clk_get(&pdev->dev, "vpu");
+	if (IS_ERR(unicam->vpu_clock)) {
+		unicam_err(unicam, "Failed to get vpu clock\n");
+		ret = PTR_ERR(unicam->vpu_clock);
+		goto err_unicam_put;
 	}
 
 	ret = platform_get_irq(pdev, 0);
 	if (ret <= 0) {
 		dev_err(&pdev->dev, "No IRQ resource\n");
-		return -ENODEV;
+		ret = -EINVAL;
+		goto err_unicam_put;
 	}
 
 	ret = devm_request_irq(&pdev->dev, ret, unicam_isr, 0,
 			       "unicam_capture0", unicam);
 	if (ret) {
 		dev_err(&pdev->dev, "Unable to request interrupt\n");
-		return -EINVAL;
+		ret = -EINVAL;
+		goto err_unicam_put;
 	}
 
 	unicam->mdev.dev = &pdev->dev;
@@ -2772,14 +2814,9 @@ static int unicam_probe(struct platform_device *pdev)
 		sizeof(unicam->mdev.model));
 	strscpy(unicam->mdev.serial, "", sizeof(unicam->mdev.serial));
 	snprintf(unicam->mdev.bus_info, sizeof(unicam->mdev.bus_info),
-		 "platform:%s %s",
-		 pdev->dev.driver->name, dev_name(&pdev->dev));
-	unicam->mdev.hw_revision = 1;
+		 "platform:%s", dev_name(&pdev->dev));
+	unicam->mdev.hw_revision = 0;
 
-	media_entity_pads_init(&unicam->node[IMAGE_PAD].video_dev.entity, 1,
-			       &unicam->node[IMAGE_PAD].pad);
-	media_entity_pads_init(&unicam->node[METADATA_PAD].video_dev.entity, 1,
-			       &unicam->node[METADATA_PAD].pad);
 	media_device_init(&unicam->mdev);
 
 	unicam->v4l2_dev.mdev = &unicam->mdev;
@@ -2788,21 +2825,20 @@ static int unicam_probe(struct platform_device *pdev)
 	if (ret) {
 		unicam_err(unicam,
 			   "Unable to register v4l2 device.\n");
-		goto media_cleanup;
+		goto err_unicam_put;
 	}
 
 	ret = media_device_register(&unicam->mdev);
 	if (ret < 0) {
 		unicam_err(unicam,
 			   "Unable to register media-controller device.\n");
-		goto probe_out_v4l2_unregister;
+		goto err_v4l2_unregister;
 	}
 
 	/* Reserve space for the controls */
-	hdl = &unicam->node[IMAGE_PAD].ctrl_handler;
-	ret = v4l2_ctrl_handler_init(hdl, 16);
+	ret = v4l2_ctrl_handler_init(&unicam->ctrl_handler, 16);
 	if (ret < 0)
-		goto media_unregister;
+		goto err_media_unregister;
 
 	/* set the driver data in platform device */
 	platform_set_drvdata(pdev, unicam);
@@ -2810,7 +2846,7 @@ static int unicam_probe(struct platform_device *pdev)
 	ret = of_unicam_connect_subdevs(unicam);
 	if (ret) {
 		dev_err(&pdev->dev, "Failed to connect subdevs\n");
-		goto free_hdl;
+		goto err_media_unregister;
 	}
 
 	/* Enable the block power domain */
@@ -2818,14 +2854,12 @@ static int unicam_probe(struct platform_device *pdev)
 
 	return 0;
 
-free_hdl:
-	v4l2_ctrl_handler_free(hdl);
-media_unregister:
+err_media_unregister:
 	media_device_unregister(&unicam->mdev);
-probe_out_v4l2_unregister:
+err_v4l2_unregister:
 	v4l2_device_unregister(&unicam->v4l2_dev);
-media_cleanup:
-	media_device_cleanup(&unicam->mdev);
+err_unicam_put:
+	unicam_put(unicam);
 
 	return ret;
 }
@@ -2836,16 +2870,12 @@ static int unicam_remove(struct platform_device *pdev)
 
 	unicam_dbg(2, unicam, "%s\n", __func__);
 
-	pm_runtime_disable(&pdev->dev);
-
 	v4l2_async_notifier_unregister(&unicam->notifier);
-	v4l2_ctrl_handler_free(&unicam->node[IMAGE_PAD].ctrl_handler);
 	v4l2_device_unregister(&unicam->v4l2_dev);
-	unregister_nodes(unicam);
-	if (unicam->sensor_config)
-		v4l2_subdev_free_pad_config(unicam->sensor_config);
 	media_device_unregister(&unicam->mdev);
-	media_device_cleanup(&unicam->mdev);
+	unregister_nodes(unicam);
+
+	pm_runtime_disable(&pdev->dev);
 
 	return 0;
 }

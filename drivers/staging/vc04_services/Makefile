@@ -17,5 +17,5 @@ obj-$(CONFIG_BCM_VC_SM_CMA) 		+= vc-sm-cma/
 obj-$(CONFIG_VIDEO_CODEC_BCM2835)	+= bcm2835-codec/
 obj-$(CONFIG_VIDEO_ISP_BCM2835)		+= bcm2835-isp/
 
-ccflags-y += -Idrivers/staging/vc04_services -D__VCCOREVER__=0x04000000
+ccflags-y += -D__VCCOREVER__=0x04000000
 

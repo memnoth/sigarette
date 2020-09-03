@@ -46,7 +46,7 @@
  */
 struct bcm2835_isp_rational {
 	__s32 num;
-	__s32 den;
+	__u32 den;
 };
 
 /**
@@ -108,7 +108,7 @@ enum bcm2835_isp_gain_format {
  * @grid_stride:	Row to row distance (in grid cells) between grid cells
  *			in the same horizontal location.
  * @grid_height:	Height of lens shading tables in grid cells.
- * @mem_handle_table:	Memory handle to the tables.
+ * @dmabuf:		dmabuf file handle containing the table.
  * @ref_transform:	Reference transform - unsupported, please pass zero.
  * @corner_sampled:	Whether the gains are sampled at the corner points
  *			of the grid cells or in the cell centres.
@@ -120,7 +120,7 @@ struct bcm2835_isp_lens_shading {
 	__u32 grid_width;
 	__u32 grid_stride;
 	__u32 grid_height;
-	__u32 mem_handle_table;
+	__s32 dmabuf;
 	__u32 ref_transform;
 	__u32 corner_sampled;
 	__u32 gain_format;
@@ -140,7 +140,7 @@ struct bcm2835_isp_black_level {
 	__u16 black_level_r;
 	__u16 black_level_g;
 	__u16 black_level_b;
-	__u8 pad_[2]; /* Unused */
+	__u8 padding[2]; /* Unused */
 };
 
 /**

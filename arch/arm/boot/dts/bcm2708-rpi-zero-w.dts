@@ -4,6 +4,7 @@
 #include "bcm2708-rpi.dtsi"
 #include "bcm283x-rpi-csi1-2lane.dtsi"
 #include "bcm283x-rpi-i2c0mux_0_28.dtsi"
+#include "bcm2708-rpi-bt.dtsi"
 
 / {
 	compatible = "raspberrypi,model-zero-w", "brcm,bcm2835";
@@ -143,8 +144,8 @@
 &leds {
 	act_led: act {
 		label = "led0";
-		linux,default-trigger = "mmc0";
-		gpios = <&gpio 47 0>;
+		linux,default-trigger = "actpwr";
+		gpios = <&gpio 47 GPIO_ACTIVE_LOW>;
 	};
 };
 

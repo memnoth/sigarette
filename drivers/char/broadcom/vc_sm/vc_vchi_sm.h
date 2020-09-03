@@ -29,7 +29,7 @@ struct sm_instance;
 /*
  * Initialize the shared memory service, opens up vchi connection to talk to it.
  */
-struct sm_instance *vc_vchi_sm_init(VCHI_INSTANCE_T vchi_instance);
+struct sm_instance *vc_vchi_sm_init(struct vchi_instance_handle * vchi_instance);
 
 /*
  * Terminates the shared memory service.

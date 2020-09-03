@@ -23,7 +23,6 @@
 #endif
 #include <asm/synch.h>
 #include <asm/ppc-opcode.h>
-#include <asm/asm-405.h>
 
 #ifdef CONFIG_PPC64
 /* use 0x800000yy when locked, where yy == CPU number */
@@ -113,13 +112,8 @@ static inline void splpar_rw_yield(arch_rwlock_t *lock) {};
 
 static inline bool is_shared_processor(void)
 {
-/*
- * LPPACA is only available on Pseries so guard anything LPPACA related to
- * allow other platforms (which include this common header) to compile.
- */
-#ifdef CONFIG_PPC_PSERIES
-	return (IS_ENABLED(CONFIG_PPC_SPLPAR) &&
-		lppaca_shared_proc(local_paca->lppaca_ptr));
+#ifdef CONFIG_PPC_SPLPAR
+	return static_branch_unlikely(&shared_processor);
 #else
 	return false;
 #endif
@@ -215,7 +209,6 @@ static inline long __arch_read_trylock(arch_rwlock_t *rw)
 	__DO_SIGN_EXTEND
 "	addic.		%0,%0,1\n\
 	ble-		2f\n"
-	PPC405_ERR77(0,%1)
 "	stwcx.		%0,0,%1\n\
 	bne-		1b\n"
 	PPC_ACQUIRE_BARRIER
@@ -239,7 +232,6 @@ static inline long __arch_write_trylock(arch_rwlock_t *rw)
 "1:	" PPC_LWARX(%0,0,%2,1) "\n\
 	cmpwi		0,%0,0\n\
 	bne-		2f\n"
-	PPC405_ERR77(0,%1)
 "	stwcx.		%1,0,%2\n\
 	bne-		1b\n"
 	PPC_ACQUIRE_BARRIER
@@ -297,7 +289,6 @@ static inline void arch_read_unlock(arch_rwlock_t *rw)
 	PPC_RELEASE_BARRIER
 "1:	lwarx		%0,0,%1\n\
 	addic		%0,%0,-1\n"
-	PPC405_ERR77(0,%1)
 "	stwcx.		%0,0,%1\n\
 	bne-		1b"
 	: "=&r"(tmp)
