@@ -46,6 +46,7 @@
 			clocks = <&clk_108MHz>;
 			#clock-cells = <1>;
 			#reset-cells = <1>;
+			status = "disabled";
 		};
 
 		hdmi0: hdmi@7ef00700 {
@@ -188,8 +189,7 @@
 		 <0x0 0x40000000  0x0 0xff800000  0x0 0x00800000>,
 		 <0x6 0x00000000  0x6 0x00000000  0x0 0x40000000>,
 		 <0x0 0x00000000  0x0 0x00000000  0x0 0xfc000000>;
-	dma-ranges = <0x0 0x00000000  0x0 0x00000000  0x0 0xfc000000>,
-		     <0x1 0x00000000  0x1 0x00000000  0x1 0x00000000>;
+	dma-ranges = <0x0 0x00000000  0x0 0x00000000  0x4 0x00000000>;
 
 	dma40: dma@7e007b00 {
 		compatible = "brcm,bcm2711-dma";
@@ -212,6 +212,7 @@
 		status = "disabled";
 		reg = <0x0 0x7e9c0000  0x0 0x100000>;
 		interrupts = <GIC_SPI 176 IRQ_TYPE_LEVEL_HIGH>;
+		power-domains = <&power RPI_POWER_DOMAIN_USB>;
 	};
 
 	hevc-decoder@7eb00000 {
@@ -299,4 +300,8 @@
 
 &hvs {
 	clocks = <&firmware_clocks 4>;
+};
+
+&emmc2 {
+	mmc-ddr-3_3v;
 };

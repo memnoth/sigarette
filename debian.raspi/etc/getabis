@@ -8,5 +8,5 @@ repo_list=(
 	"http://ppa.launchpad.net/canonical-kernel-team/bootstrap/ubuntu/pool/main/l/linux-raspi"
 )
 
-getall armhf raspi
+getall armhf raspi raspi-nolpae
 getall arm64 raspi
