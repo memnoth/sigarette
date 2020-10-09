@@ -46,7 +46,14 @@ Build-Depends-Indep:
  asciidoc <!stage1>,
  python3-sphinx <!stage1>,
  python3-sphinx-rtd-theme <!stage1>,
+ fontconfig <!stage1>,
  python3-docutils <!stage1>,
+ imagemagick <!stage1>,
+ graphviz <!stage1>,
+ dvipng <!stage1>,
+ fonts-noto-cjk <!stage1>,
+ latexmk <!stage1>,
+ librsvg2-bin <!stage1>,
 Vcs-Git: git://git.launchpad.net/~ubuntu-kernel/ubuntu/+source/linux-raspi/+git/=SERIES=
 Vcs-Browser: https://git.launchpad.net/~ubuntu-kernel/ubuntu/+source/linux-raspi/+git/=SERIES=/log/
 XS-Testsuite: autopkgtest

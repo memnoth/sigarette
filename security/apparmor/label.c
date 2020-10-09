@@ -393,13 +393,12 @@ static void label_free_or_put_new(struct aa_label *label, struct aa_label *new)
 		aa_put_label(new);
 }
 
-bool aa_label_init(struct aa_label *label, int size)
+bool aa_label_init(struct aa_label *label, int size, gfp_t gfp)
 {
 	AA_BUG(!label);
 	AA_BUG(size < 1);
 
-	label->secid = aa_alloc_secid();
-	if (label->secid == AA_SECID_INVALID)
+	if (aa_alloc_secid(label, gfp) < 0)
 		return false;
 
 	label->size = size;			/* doesn't include null */
@@ -432,7 +431,7 @@ struct aa_label *aa_label_alloc(int size, struct aa_proxy *proxy, gfp_t gfp)
 	if (!new)
 		goto fail;
 
-	if (!aa_label_init(new, size))
+	if (!aa_label_init(new, size, gfp))
 		goto fail;
 
 	if (!proxy) {
@@ -1633,13 +1632,10 @@ int aa_label_snxprint(char *str, size_t size, struct aa_ns *ns,
 	AA_BUG(!str && size != 0);
 	AA_BUG(!label);
 
-	if (flags & FLAG_ABS_ROOT) {
+	if (flags & FLAG_ABS_ROOT)
 		ns = root_ns;
-		len = snprintf(str, size, "=");
-		update_for_len(total, len, size, str);
-	} else if (!ns) {
+	else if (!ns)
 		ns = labels_ns(label);
-	}
 
 	label_for_each(i, label, profile) {
 		if (aa_ns_visible(ns, profile->ns, flags & FLAG_VIEW_SUBNS)) {
