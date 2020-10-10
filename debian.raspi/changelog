@@ -1,3 +1,13 @@
+linux-raspi (5.8.0-1005.8) groovy; urgency=medium
+
+
+  [ Ubuntu: 5.8.0-23.24 ]
+
+  * CVE-2020-16119
+    - SAUCE: dccp: avoid double free of ccid on child socket
+
+ -- Seth Forshee <seth.forshee@canonical.com>  Fri, 09 Oct 2020 21:14:54 -0500
+
 linux-raspi (5.8.0-1004.7) groovy; urgency=medium
 
   * groovy/linux-raspi: 5.8.0-1004.7 -proposed tracker (LP: #1899091)
