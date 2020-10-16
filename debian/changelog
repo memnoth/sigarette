@@ -1,3 +1,41 @@
+linux-raspi (5.8.0-1006.9) groovy; urgency=medium
+
+  * groovy/linux-raspi: 5.8.0-1006.9 -proposed tracker (LP: #1899928)
+
+  * CVE-2020-12351 // CVE-2020-12352 // CVE-2020-24490
+    - [Config] raspi: Disable BlueZ highspeed support
+
+  * booting linux-generic-lpae armhf kernel under qemu results in relocation out
+    of range, and thus no modules can be loaded (LP: #1899519)
+    - [Config] raspi: armhf: ARM_MODULE_PLTS=y
+
+  [ Ubuntu: 5.8.0-25.26 ]
+
+  * groovy/linux: 5.8.0-25.26 -proposed tracker (LP: #1899940)
+  * CVE-2020-12351
+    - Bluetooth: L2CAP: Fix calling sk_filter on non-socket based channel
+  * CVE-2020-12352
+    - Bluetooth: A2MP: Fix not initializing all members
+  * CVE-2020-12351 // CVE-2020-12352 // CVE-2020-24490
+    - Bluetooth: Disable High Speed by default
+    - Bluetooth: MGMT: Fix not checking if BT_HS is enabled
+    - [Config] Disable BlueZ highspeed support
+  * ec2-hibinit-agent needs to properly initialize swap file (LP: #1892728)
+    - ext4: implement swap_activate aops using iomap
+
+  [ Ubuntu: 5.8.0-24.25 ]
+
+  * groovy/linux: 5.8.0-24.25 -proposed tracker (LP: #1899804)
+  * Fix system reboot when disconnecting WiFi (LP: #1899726)
+    - iwlwifi: msix: limit max RX queues for 9000 family
+  * ceph: fix inode number handling on arches with 32-bit ino_t (LP: #1899582)
+    - ceph: fix inode number handling on arches with 32-bit ino_t
+  * booting linux-generic-lpae armhf kernel under qemu results in relocation out
+    of range, and thus no modules can be loaded (LP: #1899519)
+    - [Config] armhf: ARM_MODULE_PLTS=y
+
+ -- Juerg Haefliger <juergh@canonical.com>  Fri, 16 Oct 2020 07:57:18 +0200
+
 linux-raspi (5.8.0-1005.8) groovy; urgency=medium
 
 
