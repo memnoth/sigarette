@@ -1,3 +1,25 @@
+linux-raspi (5.8.0-1007.10) groovy; urgency=medium
+
+  [ Ubuntu: 5.8.0-28.30 ]
+
+  * CVE-2020-27194
+    - bpf: Fix scalar32_min_max_or bounds tracking
+
+  [ Ubuntu: 5.8.0-27.29 ]
+
+  * CVE-2020-8694
+    - powercap: make attributes only readable by root
+
+  [ Ubuntu: 5.8.0-26.27 ]
+
+  * groovy/linux: 5.8.0-26.27 -proposed tracker (LP: #1900896)
+  * Packaging resync (LP: #1786013)
+    - update dkms package versions
+  * Introduce the new NVIDIA 455 series (LP: #1897751)
+    - [Packaging] NVIDIA -- Add signed modules for the 455 driver
+
+ -- Thadeu Lima de Souza Cascardo <cascardo@canonical.com>  Thu, 05 Nov 2020 13:18:04 -0300
+
 linux-raspi (5.8.0-1006.9) groovy; urgency=medium
 
   * groovy/linux-raspi: 5.8.0-1006.9 -proposed tracker (LP: #1899928)

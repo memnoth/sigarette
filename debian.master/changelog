@@ -1,3 +1,29 @@
+linux (5.8.0-28.30) groovy; urgency=medium
+
+  * CVE-2020-27194
+    - bpf: Fix scalar32_min_max_or bounds tracking
+
+ -- Thadeu Lima de Souza Cascardo <cascardo@canonical.com>  Wed, 04 Nov 2020 22:02:24 -0300
+
+linux (5.8.0-27.29) groovy; urgency=medium
+
+  * CVE-2020-8694
+    - powercap: make attributes only readable by root
+
+ -- Kleber Sacilotto de Souza <kleber.souza@canonical.com>  Thu, 29 Oct 2020 11:28:11 +0100
+
+linux (5.8.0-26.27) groovy; urgency=medium
+
+  * groovy/linux: 5.8.0-26.27 -proposed tracker (LP: #1900896)
+
+  * Packaging resync (LP: #1786013)
+    - update dkms package versions
+
+  * Introduce the new NVIDIA 455 series (LP: #1897751)
+    - [Packaging] NVIDIA -- Add signed modules for the 455 driver
+
+ -- Seth Forshee <seth.forshee@canonical.com>  Wed, 21 Oct 2020 15:35:59 -0500
+
 linux (5.8.0-25.26) groovy; urgency=medium
 
   * groovy/linux: 5.8.0-25.26 -proposed tracker (LP: #1899940)
