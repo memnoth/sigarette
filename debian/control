@@ -59,7 +59,7 @@ Vcs-Browser: https://git.launchpad.net/~ubuntu-kernel/ubuntu/+source/linux-raspi
 XS-Testsuite: autopkgtest
 #XS-Testsuite-Depends: gcc-4.7 binutils
 
-Package: linux-raspi-headers-5.8.0-1007
+Package: linux-raspi-headers-5.8.0-1008
 Build-Profiles: <!stage1>
 Architecture: armhf arm64
 Multi-Arch: foreign
@@ -69,34 +69,34 @@ Depends: ${misc:Depends}, coreutils
 Description: Header files related to Linux kernel version 5.8.0
  This package provides kernel header files for version 5.8.0, for sites
  that want the latest kernel headers. Please read
- /usr/share/doc/linux-raspi-headers-5.8.0-1007/debian.README.gz for details
+ /usr/share/doc/linux-raspi-headers-5.8.0-1008/debian.README.gz for details
 
-Package: linux-raspi-tools-5.8.0-1007
+Package: linux-raspi-tools-5.8.0-1008
 Build-Profiles: <!stage1>
 Architecture: armhf arm64
 Section: devel
 Priority: optional
 Depends: ${misc:Depends}, ${shlibs:Depends}, linux-tools-common
-Description: Linux kernel version specific tools for version 5.8.0-1007
+Description: Linux kernel version specific tools for version 5.8.0-1008
  This package provides the architecture dependant parts for kernel
  version locked tools (such as perf and x86_energy_perf_policy) for
- version 5.8.0-1007 on
+ version 5.8.0-1008 on
  .
- You probably want to install linux-tools-5.8.0-1007-<flavour>.
+ You probably want to install linux-tools-5.8.0-1008-<flavour>.
 
 
 
-Package: linux-image-5.8.0-1007-raspi
+Package: linux-image-5.8.0-1008-raspi
 Build-Profiles: <!stage1>
 Architecture: armhf arm64
 Section: kernel
 Priority: optional
 Provides: linux-image, fuse-module, aufs-dkms, kvm-api-4, redhat-cluster-modules, ivtv-modules, ${linux:rprovides}
-Depends: ${misc:Depends}, ${shlibs:Depends}, kmod, linux-base (>= 4.5ubuntu1~16.04.1), linux-modules-5.8.0-1007-raspi
+Depends: ${misc:Depends}, ${shlibs:Depends}, kmod, linux-base (>= 4.5ubuntu1~16.04.1), linux-modules-5.8.0-1008-raspi
 Recommends: grub-pc [amd64 x32] | grub-efi-amd64 [amd64 x32] | grub-efi-ia32 [amd64 x32] | grub [amd64 x32] | lilo (>= 19.1) [amd64 x32] | flash-kernel [armhf arm64] | grub-ieee1275 [ppc64el], initramfs-tools | linux-initramfs-tool
 Breaks: flash-kernel (<< 3.90ubuntu2) [arm64 armhf], s390-tools (<< 2.3.0-0ubuntu3) [s390x]
-Conflicts: linux-image-unsigned-5.8.0-1007-raspi
-Suggests: fdutils, linux-raspi-doc-5.8.0 | linux-raspi-source-5.8.0, linux-raspi-tools, linux-headers-5.8.0-1007-raspi
+Conflicts: linux-image-unsigned-5.8.0-1008-raspi
+Suggests: fdutils, linux-raspi-doc-5.8.0 | linux-raspi-source-5.8.0, linux-raspi-tools, linux-headers-5.8.0-1008-raspi
 Description: Linux kernel image for version 5.8.0 on  SMP
  This package contains the Linux kernel image for version 5.8.0 on
   SMP.
@@ -109,7 +109,7 @@ Description: Linux kernel image for version 5.8.0 on  SMP
  the linux-raspi meta-package, which will ensure that upgrades work
  correctly, and that supporting packages are also installed.
 
-Package: linux-modules-5.8.0-1007-raspi
+Package: linux-modules-5.8.0-1008-raspi
 Build-Profiles: <!stage1>
 Architecture: armhf arm64
 Section: kernel
@@ -129,21 +129,21 @@ Description: Linux kernel extra modules for version 5.8.0 on  SMP
  the linux-raspi meta-package, which will ensure that upgrades work
  correctly, and that supporting packages are also installed.
 
-Package: linux-headers-5.8.0-1007-raspi
+Package: linux-headers-5.8.0-1008-raspi
 Build-Profiles: <!stage1>
 Architecture: armhf arm64
 Section: devel
 Priority: optional
-Depends: ${misc:Depends}, linux-raspi-headers-5.8.0-1007, ${shlibs:Depends}
+Depends: ${misc:Depends}, linux-raspi-headers-5.8.0-1008, ${shlibs:Depends}
 Provides: linux-headers, linux-headers-3.0
 Description: Linux kernel headers for version 5.8.0 on  SMP
  This package provides kernel header files for version 5.8.0 on
   SMP.
  .
  This is for sites that want the latest kernel headers.  Please read
- /usr/share/doc/linux-headers-5.8.0-1007/debian.README.gz for details.
+ /usr/share/doc/linux-headers-5.8.0-1008/debian.README.gz for details.
 
-Package: linux-image-5.8.0-1007-raspi-dbgsym
+Package: linux-image-5.8.0-1008-raspi-dbgsym
 Build-Profiles: <!stage1>
 Architecture: armhf arm64
 Section: devel
@@ -160,19 +160,19 @@ Description: Linux kernel debug image for version 5.8.0 on  SMP
  is uncompressed, and unstripped. This package also includes the
  unstripped modules.
 
-Package: linux-tools-5.8.0-1007-raspi
+Package: linux-tools-5.8.0-1008-raspi
 Build-Profiles: <!stage1>
 Architecture: armhf arm64
 Section: devel
 Priority: optional
-Depends: ${misc:Depends}, linux-raspi-tools-5.8.0-1007
-Description: Linux kernel version specific tools for version 5.8.0-1007
+Depends: ${misc:Depends}, linux-raspi-tools-5.8.0-1008
+Description: Linux kernel version specific tools for version 5.8.0-1008
  This package provides the architecture dependant parts for kernel
  version locked tools (such as perf and x86_energy_perf_policy) for
- version 5.8.0-1007 on
+ version 5.8.0-1008 on
  .
 
-Package: linux-buildinfo-5.8.0-1007-raspi
+Package: linux-buildinfo-5.8.0-1008-raspi
 Build-Profiles: <!stage1>
 Architecture: armhf arm64
 Section: kernel
@@ -185,17 +185,17 @@ Description: Linux kernel buildinfo for version 5.8.0 on  SMP
  .
  You likely do not want to install this package.
 
-Package: linux-image-5.8.0-1007-raspi-nolpae
+Package: linux-image-5.8.0-1008-raspi-nolpae
 Build-Profiles: <!stage1>
 Architecture: armhf
 Section: kernel
 Priority: optional
 Provides: linux-image, fuse-module, aufs-dkms, kvm-api-4, redhat-cluster-modules, ivtv-modules, ${linux:rprovides}
-Depends: ${misc:Depends}, ${shlibs:Depends}, kmod, linux-base (>= 4.5ubuntu1~16.04.1), linux-modules-5.8.0-1007-raspi-nolpae
+Depends: ${misc:Depends}, ${shlibs:Depends}, kmod, linux-base (>= 4.5ubuntu1~16.04.1), linux-modules-5.8.0-1008-raspi-nolpae
 Recommends: grub-pc [amd64 x32] | grub-efi-amd64 [amd64 x32] | grub-efi-ia32 [amd64 x32] | grub [amd64 x32] | lilo (>= 19.1) [amd64 x32] | flash-kernel [armhf arm64] | grub-ieee1275 [ppc64el], initramfs-tools | linux-initramfs-tool
 Breaks: flash-kernel (<< 3.90ubuntu2) [arm64 armhf], s390-tools (<< 2.3.0-0ubuntu3) [s390x]
-Conflicts: linux-image-unsigned-5.8.0-1007-raspi-nolpae
-Suggests: fdutils, linux-raspi-doc-5.8.0 | linux-raspi-source-5.8.0, linux-raspi-tools, linux-headers-5.8.0-1007-raspi-nolpae
+Conflicts: linux-image-unsigned-5.8.0-1008-raspi-nolpae
+Suggests: fdutils, linux-raspi-doc-5.8.0 | linux-raspi-source-5.8.0, linux-raspi-tools, linux-headers-5.8.0-1008-raspi-nolpae
 Description: Linux kernel image for version 5.8.0 on  SMP
  This package contains the Linux kernel image for version 5.8.0 on
   SMP.
@@ -208,7 +208,7 @@ Description: Linux kernel image for version 5.8.0 on  SMP
  the linux-raspi-nolpae meta-package, which will ensure that upgrades work
  correctly, and that supporting packages are also installed.
 
-Package: linux-modules-5.8.0-1007-raspi-nolpae
+Package: linux-modules-5.8.0-1008-raspi-nolpae
 Build-Profiles: <!stage1>
 Architecture: armhf
 Section: kernel
@@ -228,21 +228,21 @@ Description: Linux kernel extra modules for version 5.8.0 on  SMP
  the linux-raspi-nolpae meta-package, which will ensure that upgrades work
  correctly, and that supporting packages are also installed.
 
-Package: linux-headers-5.8.0-1007-raspi-nolpae
+Package: linux-headers-5.8.0-1008-raspi-nolpae
 Build-Profiles: <!stage1>
 Architecture: armhf
 Section: devel
 Priority: optional
-Depends: ${misc:Depends}, linux-raspi-headers-5.8.0-1007, ${shlibs:Depends}
+Depends: ${misc:Depends}, linux-raspi-headers-5.8.0-1008, ${shlibs:Depends}
 Provides: linux-headers, linux-headers-3.0
 Description: Linux kernel headers for version 5.8.0 on  SMP
  This package provides kernel header files for version 5.8.0 on
   SMP.
  .
  This is for sites that want the latest kernel headers.  Please read
- /usr/share/doc/linux-headers-5.8.0-1007/debian.README.gz for details.
+ /usr/share/doc/linux-headers-5.8.0-1008/debian.README.gz for details.
 
-Package: linux-image-5.8.0-1007-raspi-nolpae-dbgsym
+Package: linux-image-5.8.0-1008-raspi-nolpae-dbgsym
 Build-Profiles: <!stage1>
 Architecture: armhf
 Section: devel
@@ -259,19 +259,19 @@ Description: Linux kernel debug image for version 5.8.0 on  SMP
  is uncompressed, and unstripped. This package also includes the
  unstripped modules.
 
-Package: linux-tools-5.8.0-1007-raspi-nolpae
+Package: linux-tools-5.8.0-1008-raspi-nolpae
 Build-Profiles: <!stage1>
 Architecture: armhf
 Section: devel
 Priority: optional
-Depends: ${misc:Depends}, linux-raspi-tools-5.8.0-1007
-Description: Linux kernel version specific tools for version 5.8.0-1007
+Depends: ${misc:Depends}, linux-raspi-tools-5.8.0-1008
+Description: Linux kernel version specific tools for version 5.8.0-1008
  This package provides the architecture dependant parts for kernel
  version locked tools (such as perf and x86_energy_perf_policy) for
- version 5.8.0-1007 on
+ version 5.8.0-1008 on
  .
 
-Package: linux-buildinfo-5.8.0-1007-raspi-nolpae
+Package: linux-buildinfo-5.8.0-1008-raspi-nolpae
 Build-Profiles: <!stage1>
 Architecture: armhf
 Section: kernel

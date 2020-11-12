@@ -6,6 +6,7 @@
 rm -f 'Documentation/devicetree/bindings/display/brcm,bcm-vc4.txt'
 rm -f 'arch/arm/boot/dts/bcm283x-rpi-usb-peripheral.dtsi'
 rm -f 'arch/powerpc/platforms/pseries/offline_states.h'
+rm -f 'drivers/net/ethernet/mscc/ocelot_board.c'
 rm -f 'drivers/reset/reset-simple.h'
 rm -f 'drivers/staging/vc04_services/bcm2835-camera/mmal-common.h'
 rm -f 'drivers/staging/vc04_services/bcm2835-camera/mmal-encodings.h'
