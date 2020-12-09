@@ -1021,8 +1021,8 @@ EXPORT_SYMBOL	 drivers/infiniband/core/ib_cm 0x00000000	ib_send_cm_rtu
 EXPORT_SYMBOL	 drivers/infiniband/core/ib_cm 0x00000000	ib_send_cm_sidr_rep
 EXPORT_SYMBOL	 drivers/infiniband/core/ib_cm 0x00000000	ib_send_cm_sidr_req
 EXPORT_SYMBOL	 drivers/infiniband/core/ib_cm 0x00000000	ibcm_reject_msg
+EXPORT_SYMBOL	 drivers/infiniband/core/ib_core 0x00000000	__ib_alloc_cq
 EXPORT_SYMBOL	 drivers/infiniband/core/ib_core 0x00000000	__ib_alloc_cq_any
-EXPORT_SYMBOL	 drivers/infiniband/core/ib_core 0x00000000	__ib_alloc_cq_user
 EXPORT_SYMBOL	 drivers/infiniband/core/ib_core 0x00000000	__ib_alloc_pd
 EXPORT_SYMBOL	 drivers/infiniband/core/ib_core 0x00000000	__ib_alloc_xrcd
 EXPORT_SYMBOL	 drivers/infiniband/core/ib_core 0x00000000	__ib_create_cq
@@ -1069,7 +1069,7 @@ EXPORT_SYMBOL	 drivers/infiniband/core/ib_core 0x00000000	ib_find_cached_pkey
 EXPORT_SYMBOL	 drivers/infiniband/core/ib_core 0x00000000	ib_find_exact_cached_pkey
 EXPORT_SYMBOL	 drivers/infiniband/core/ib_core 0x00000000	ib_find_gid
 EXPORT_SYMBOL	 drivers/infiniband/core/ib_core 0x00000000	ib_find_pkey
-EXPORT_SYMBOL	 drivers/infiniband/core/ib_core 0x00000000	ib_free_cq_user
+EXPORT_SYMBOL	 drivers/infiniband/core/ib_core 0x00000000	ib_free_cq
 EXPORT_SYMBOL	 drivers/infiniband/core/ib_core 0x00000000	ib_free_recv_mad
 EXPORT_SYMBOL	 drivers/infiniband/core/ib_core 0x00000000	ib_free_send_mad
 EXPORT_SYMBOL	 drivers/infiniband/core/ib_core 0x00000000	ib_get_cached_lmc
@@ -1983,6 +1983,7 @@ EXPORT_SYMBOL	 drivers/net/ethernet/hisilicon/hns/hnae 0x00000000	hnae_register_
 EXPORT_SYMBOL	 drivers/net/ethernet/hisilicon/hns/hnae 0x00000000	hnae_reinit_handle
 EXPORT_SYMBOL	 drivers/net/ethernet/hisilicon/hns/hnae 0x00000000	hnae_unregister_notifier
 EXPORT_SYMBOL	 drivers/net/ethernet/hisilicon/hns/hns_dsaf 0x00000000	hns_dsaf_roce_reset
+EXPORT_SYMBOL	 drivers/net/ethernet/marvell/octeontx2/af/octeontx2_mbox 0x00000000	__otx2_mbox_reset
 EXPORT_SYMBOL	 drivers/net/ethernet/marvell/octeontx2/af/octeontx2_mbox 0x00000000	otx2_mbox_alloc_msg_rsp
 EXPORT_SYMBOL	 drivers/net/ethernet/marvell/octeontx2/af/octeontx2_mbox 0x00000000	otx2_mbox_busy_poll_for_rsp
 EXPORT_SYMBOL	 drivers/net/ethernet/marvell/octeontx2/af/octeontx2_mbox 0x00000000	otx2_mbox_check_rsp_msgs
@@ -6906,6 +6907,7 @@ EXPORT_SYMBOL	 vmlinux 0x00000000	md_reap_sync_thread
 EXPORT_SYMBOL	 vmlinux 0x00000000	md_register_thread
 EXPORT_SYMBOL	 vmlinux 0x00000000	md_reload_sb
 EXPORT_SYMBOL	 vmlinux 0x00000000	md_set_array_sectors
+EXPORT_SYMBOL	 vmlinux 0x00000000	md_submit_discard_bio
 EXPORT_SYMBOL	 vmlinux 0x00000000	md_unregister_thread
 EXPORT_SYMBOL	 vmlinux 0x00000000	md_update_sb
 EXPORT_SYMBOL	 vmlinux 0x00000000	md_wait_for_blocked_rdev
@@ -7799,7 +7801,6 @@ EXPORT_SYMBOL	 vmlinux 0x00000000	phy_validate_pause
 EXPORT_SYMBOL	 vmlinux 0x00000000	phy_write_mmd
 EXPORT_SYMBOL	 vmlinux 0x00000000	phy_write_paged
 EXPORT_SYMBOL	 vmlinux 0x00000000	phys_mem_access_prot
-EXPORT_SYMBOL	 vmlinux 0x00000000	physvirt_offset
 EXPORT_SYMBOL	 vmlinux 0x00000000	pid_task
 EXPORT_SYMBOL	 vmlinux 0x00000000	pin_user_pages
 EXPORT_SYMBOL	 vmlinux 0x00000000	pin_user_pages_locked
@@ -8833,7 +8834,6 @@ EXPORT_SYMBOL	 vmlinux 0x00000000	tcf_idr_check_alloc
 EXPORT_SYMBOL	 vmlinux 0x00000000	tcf_idr_cleanup
 EXPORT_SYMBOL	 vmlinux 0x00000000	tcf_idr_create
 EXPORT_SYMBOL	 vmlinux 0x00000000	tcf_idr_create_from_flags
-EXPORT_SYMBOL	 vmlinux 0x00000000	tcf_idr_insert
 EXPORT_SYMBOL	 vmlinux 0x00000000	tcf_idr_search
 EXPORT_SYMBOL	 vmlinux 0x00000000	tcf_idrinfo_destroy
 EXPORT_SYMBOL	 vmlinux 0x00000000	tcf_queue_work
@@ -9313,7 +9313,6 @@ EXPORT_SYMBOL	 vmlinux 0x00000000	vmalloc_user
 EXPORT_SYMBOL	 vmlinux 0x00000000	vmap
 EXPORT_SYMBOL	 vmlinux 0x00000000	vmcore_add_device_dump
 EXPORT_SYMBOL	 vmlinux 0x00000000	vmemdup_user
-EXPORT_SYMBOL	 vmlinux 0x00000000	vmemmap
 EXPORT_SYMBOL	 vmlinux 0x00000000	vmf_insert_mixed
 EXPORT_SYMBOL	 vmlinux 0x00000000	vmf_insert_mixed_mkwrite
 EXPORT_SYMBOL	 vmlinux 0x00000000	vmf_insert_mixed_prot
@@ -11469,7 +11468,6 @@ EXPORT_SYMBOL_GPL	 drivers/net/dsa/realtek-smi 0x00000000	realtek_smi_write_reg_
 EXPORT_SYMBOL_GPL	 drivers/net/dsa/realtek-smi 0x00000000	rtl8366_enable_vlan
 EXPORT_SYMBOL_GPL	 drivers/net/dsa/realtek-smi 0x00000000	rtl8366_enable_vlan4k
 EXPORT_SYMBOL_GPL	 drivers/net/dsa/realtek-smi 0x00000000	rtl8366_get_ethtool_stats
-EXPORT_SYMBOL_GPL	 drivers/net/dsa/realtek-smi 0x00000000	rtl8366_get_pvid
 EXPORT_SYMBOL_GPL	 drivers/net/dsa/realtek-smi 0x00000000	rtl8366_get_sset_count
 EXPORT_SYMBOL_GPL	 drivers/net/dsa/realtek-smi 0x00000000	rtl8366_get_strings
 EXPORT_SYMBOL_GPL	 drivers/net/dsa/realtek-smi 0x00000000	rtl8366_init_vlan
@@ -14047,6 +14045,7 @@ EXPORT_SYMBOL_GPL	 net/netfilter/nf_log_common 0x00000000	nf_log_dump_packet_com
 EXPORT_SYMBOL_GPL	 net/netfilter/nf_log_common 0x00000000	nf_log_dump_sk_uid_gid
 EXPORT_SYMBOL_GPL	 net/netfilter/nf_log_common 0x00000000	nf_log_dump_tcp_header
 EXPORT_SYMBOL_GPL	 net/netfilter/nf_log_common 0x00000000	nf_log_dump_udp_header
+EXPORT_SYMBOL_GPL	 net/netfilter/nf_log_common 0x00000000	nf_log_dump_vlan
 EXPORT_SYMBOL_GPL	 net/netfilter/nf_log_common 0x00000000	nf_log_l2packet
 EXPORT_SYMBOL_GPL	 net/netfilter/nf_nat 0x00000000	nf_ct_nat_ext_add
 EXPORT_SYMBOL_GPL	 net/netfilter/nf_nat 0x00000000	nf_nat_alloc_null_binding
