@@ -44,6 +44,8 @@ dtbo-$(CONFIG_ARCH_BCM2835) += \
 	enc28j60-spi2.dtbo \
 	exc3000.dtbo \
 	fe-pi-audio.dtbo \
+	fsm-demo.dtbo \
+	ghost-amp.dtbo \
 	goodix.dtbo \
 	googlevoicehat-soundcard.dtbo \
 	gpio-fan.dtbo \

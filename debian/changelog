@@ -1,3 +1,79 @@
+linux-raspi (5.8.0-1013.16) groovy; urgency=medium
+
+  * groovy/linux-raspi: 5.8.0-1013.16 -proposed tracker (LP: #1911336)
+
+  * rpi3b+ wifi doesn't get used if ethernet disconnected (LP: #1890487)
+    - net: lan78xx: Ack pending PHY ints when resetting
+
+  * groovy/linux-raspi: Upstream raspberrypi patchset 2020-11-05 (LP: #1903541)
+    - brcmfmac: Increase power saving delay to 2s
+    - overlays: Update i2c0 overlay to disable the i2c0mux.
+    - dt: Remove duplicate assignment for i2c0 pinctrl config
+    - overlays: Add option for composite to vc4-kms-v3d-pi4.
+    - overlays: minor typo in instructions
+    - overlays: Regenerate upstream-pi4 overlay
+    - overlays: Add parameters to adafruit18, sainsmart18
+    - rpivid_h265: Fix width/height typo
+    - overlays: Add extra CMA sizes (up to 512M)
+    - overlays: Add note to BCM2711 overlays
+    - configs: Remove I2C_BRCMSTB from the kernel
+    - net: bcmgenet: Reset RBUF on first open
+    - ASoC: cs42xx8: Only define cs42xx8_of_match once
+    - configs: Regenerate the defconfigs
+    - staging: bcm2835-codec: Use a define the completion timeout
+    - staging: bcm2835-codec: Correct buffer number change on start streaming
+    - USB: gadget: f_hid: avoid crashes and log spam
+    - Update hy28b-overlay.dts
+    - overlays: Update display GPIO declarations
+    - configs: Add CONFIG_RTC_DRV_SD3078=m
+    - overlays: Add sd3078 to the i2c-rtc overlay
+    - configs: Restore SND_PCM_OSS=m
+    - dwc_otg: initialise sched_frame for periodic QHs that were parked
+    - arm64: configs: Enable Unicam support
+    - arm64: configs: Enable V4L2 test module support
+    - staging: bcm2835-camera: Replace deprecated V4L2_PIX_FMT_BGR32
+    - staging: bcm2835-codec: Replace deprecated V4L2_PIX_FMT_BGR32
+    - ARM: bcm2711-rpi.dts: Unlock DMA channels 9 & 10
+    - gpio: Add gpio-fsm driver
+    - configs: Add CONFIG_GPIO_FSM=m
+    - overlays: Add fsm-demo overlay
+    - overlays: Add ghost-amp overlay
+    - Fixes a problem when module probes before i2c module is available
+    - [Config] raspi: updateconfigs after update to rpi-5.8.y 2020-11-05
+
+  * Raspberry Pi 400 Kernel Panic (LP: #1907432)
+    - SAUCE: Revert "mailbox: avoid timer start from callback"
+
+  [ Ubuntu: 5.8.0-39.44 ]
+
+  * groovy/linux: 5.8.0-39.44 -proposed tracker (LP: #1911350)
+  * overlay: permission regression in 5.4.0-51.56 due to patches related to
+    CVE-2020-16120 (LP: #1900141)
+    - ovl: do not fail because of O_NOATIME
+
+  [ Ubuntu: 5.8.0-38.43 ]
+
+  * groovy/linux: 5.8.0-38.43 -proposed tracker (LP: #1911143)
+  * CVE-2020-28374
+    - SAUCE: target: fix XCOPY NAA identifier lookup
+  * Packaging resync (LP: #1786013)
+    - update dkms package versions
+
+  [ Ubuntu: 5.8.0-36.40 ]
+
+  * debian/scripts/file-downloader does not handle positive failures correctly
+    (LP: #1878897)
+    - [Packaging] file-downloader not handling positive failures correctly
+
+  [ Ubuntu: 5.8.0-35.39 ]
+
+  * Packaging resync (LP: #1786013)
+    - update dkms package versions
+  * CVE-2021-1052 // CVE-2021-1053
+    - [Packaging] NVIDIA -- Add the NVIDIA 460 driver
+
+ -- Ian May <ian.may@canonical.com>  Wed, 13 Jan 2021 22:57:35 -0600
+
 linux-raspi (5.8.0-1011.14) groovy; urgency=medium
 
   * groovy/linux-raspi: 5.8.0-1011.14 -proposed tracker (LP: #1907562)

@@ -1,3 +1,43 @@
+linux (5.8.0-39.44) groovy; urgency=medium
+
+  * groovy/linux: 5.8.0-39.44 -proposed tracker (LP: #1911350)
+
+  * overlay: permission regression in 5.4.0-51.56 due to patches related to
+    CVE-2020-16120 (LP: #1900141)
+    - ovl: do not fail because of O_NOATIME
+
+ -- Kelsey Skunberg <kelsey.skunberg@canonical.com>  Tue, 12 Jan 2021 21:34:26 -0700
+
+linux (5.8.0-38.43) groovy; urgency=medium
+
+  * groovy/linux: 5.8.0-38.43 -proposed tracker (LP: #1911143)
+
+  * CVE-2020-28374
+    - SAUCE: target: fix XCOPY NAA identifier lookup
+
+  * Packaging resync (LP: #1786013)
+    - update dkms package versions
+
+ -- Kleber Sacilotto de Souza <kleber.souza@canonical.com>  Tue, 12 Jan 2021 12:40:28 +0100
+
+linux (5.8.0-36.40) groovy; urgency=medium
+
+  * debian/scripts/file-downloader does not handle positive failures correctly
+    (LP: #1878897)
+    - [Packaging] file-downloader not handling positive failures correctly
+
+ -- Thadeu Lima de Souza Cascardo <cascardo@canonical.com>  Tue, 05 Jan 2021 17:57:31 -0300
+
+linux (5.8.0-35.39) groovy; urgency=medium
+
+  * Packaging resync (LP: #1786013)
+    - update dkms package versions
+
+  * CVE-2021-1052 // CVE-2021-1053
+    - [Packaging] NVIDIA -- Add the NVIDIA 460 driver
+
+ -- Thadeu Lima de Souza Cascardo <cascardo@canonical.com>  Tue, 05 Jan 2021 12:39:03 -0300
+
 linux (5.8.0-34.37) groovy; urgency=medium
 
   * groovy/linux: 5.8.0-34.37 -proposed tracker (LP: #1907576)
