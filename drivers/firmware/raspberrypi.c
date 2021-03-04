@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * Defines interfaces for interacting wtih the Raspberry Pi firmware's
+ * Defines interfaces for interacting with the Raspberry Pi firmware's
  * property channel.
  *
  * Copyright © 2015 Broadcom
@@ -11,10 +11,8 @@
 #include <linux/module.h>
 #include <linux/of_platform.h>
 #include <linux/platform_device.h>
-#include <linux/slab.h>
-#include <linux/pci.h>
-#include <linux/delay.h>
 #include <linux/reboot.h>
+#include <linux/slab.h>
 #include <soc/bcm2835/raspberrypi-firmware.h>
 
 #define MBOX_MSG(chan, data28)		(((data28) & ~0xf) | ((chan) & 0xf))
@@ -22,9 +20,8 @@
 #define MBOX_DATA28(msg)		((msg) & ~0xf)
 #define MBOX_CHAN_PROPERTY		8
 
-#define VL805_PCI_CONFIG_VERSION_OFFSET		0x50
-
 static struct platform_device *rpi_hwmon;
+static struct platform_device *rpi_clk;
 
 struct rpi_firmware {
 	struct mbox_client cl;
@@ -194,6 +191,7 @@ static int rpi_firmware_notify_reboot(struct notifier_block *nb,
 {
 	struct rpi_firmware *fw;
 	struct platform_device *pdev = g_pdev;
+	u32 reboot_flags = 0;
 
 	if (!pdev)
 		return 0;
@@ -202,8 +200,28 @@ static int rpi_firmware_notify_reboot(struct notifier_block *nb,
 	if (!fw)
 		return 0;
 
-	(void)rpi_firmware_property(fw, RPI_FIRMWARE_NOTIFY_REBOOT,
-				    0, 0);
+	// The partition id is the first parameter followed by zero or
+	// more flags separated by spaces indicating the reason for the reboot.
+	//
+	// 'tryboot': Sets a one-shot flag which is cleared upon reboot and
+	//            causes the tryboot.txt to be loaded instead of config.txt
+	//            by the bootloader and the start.elf firmware.
+	//
+	//            This is intended to allow automatic fallback to a known
+	//            good image if an OS/FW upgrade fails.
+	//
+	// N.B. The firmware mechanism for storing reboot flags may vary
+	// on different Raspberry Pi models.
+	if (data && strstr(data, " tryboot"))
+		reboot_flags |= 0x1;
+
+	// The mailbox might have been called earlier, directly via vcmailbox
+	// so only overwrite if reboot flags are passed to the reboot command.
+	if (reboot_flags)
+		(void)rpi_firmware_property(fw, RPI_FIRMWARE_SET_REBOOT_FLAGS,
+				&reboot_flags, sizeof(reboot_flags));
+
+	(void)rpi_firmware_property(fw, RPI_FIRMWARE_NOTIFY_REBOOT, NULL, 0);
 
 	return 0;
 }
@@ -302,6 +320,26 @@ rpi_register_hwmon_driver(struct device *dev, struct rpi_firmware *fw)
 	}
 }
 
+static void rpi_register_clk_driver(struct device *dev)
+{
+	struct device_node *firmware;
+
+	/*
+	 * Earlier DTs don't have a node for the firmware clocks but
+	 * rely on us creating a platform device by hand. If we do
+	 * have a node for the firmware clocks, just bail out here.
+	 */
+	firmware = of_get_compatible_child(dev->of_node,
+					   "raspberrypi,firmware-clocks");
+	if (firmware) {
+		of_node_put(firmware);
+		return;
+	}
+
+	rpi_clk = platform_device_register_data(dev, "raspberrypi-clk",
+						-1, NULL, 0);
+}
+
 static int rpi_firmware_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
@@ -331,6 +369,7 @@ static int rpi_firmware_probe(struct platform_device *pdev)
 	rpi_firmware_print_firmware_revision(fw);
 	rpi_firmware_print_firmware_hash(fw);
 	rpi_register_hwmon_driver(dev, fw);
+	rpi_register_clk_driver(dev);
 
 	return 0;
 }
@@ -351,6 +390,8 @@ static int rpi_firmware_remove(struct platform_device *pdev)
 
 	platform_device_unregister(rpi_hwmon);
 	rpi_hwmon = NULL;
+	platform_device_unregister(rpi_clk);
+	rpi_clk = NULL;
 	mbox_free_channel(fw->chan);
 	g_pdev = NULL;
 
@@ -373,63 +414,6 @@ struct rpi_firmware *rpi_firmware_get(struct device_node *firmware_node)
 	return platform_get_drvdata(pdev);
 }
 EXPORT_SYMBOL_GPL(rpi_firmware_get);
-
-/*
- * The Raspberry Pi 4 gets its USB functionality from VL805, a PCIe chip that
- * implements xHCI. After a PCI reset, VL805's firmware may either be loaded
- * directly from an EEPROM or, if not present, by the SoC's co-processor,
- * VideoCore. RPi4's VideoCore OS contains both the non public firmware load
- * logic and the VL805 firmware blob. This function triggers the aforementioned
- * process.
- */
-int rpi_firmware_init_vl805(struct pci_dev *pdev)
-{
-	struct device_node *fw_np;
-	struct rpi_firmware *fw;
-	u32 dev_addr, version;
-	int ret;
-
-	fw_np = of_find_compatible_node(NULL, NULL,
-					"raspberrypi,bcm2835-firmware");
-	if (!fw_np)
-		return 0;
-
-	fw = rpi_firmware_get(fw_np);
-	of_node_put(fw_np);
-	if (!fw)
-		return -ENODEV;
-
-	/*
-	 * Make sure we don't trigger a firmware load unnecessarily.
-	 *
-	 * If something went wrong with PCI, this whole exercise would be
-	 * futile as VideoCore expects from us a configured PCI bus. Just take
-	 * the faulty version (likely ~0) and let xHCI's registration fail
-	 * further down the line.
-	 */
-	pci_read_config_dword(pdev, VL805_PCI_CONFIG_VERSION_OFFSET, &version);
-	if (version)
-		goto exit;
-
-	dev_addr = pdev->bus->number << 20 | PCI_SLOT(pdev->devfn) << 15 |
-		   PCI_FUNC(pdev->devfn) << 12;
-
-	ret = rpi_firmware_property(fw, RPI_FIRMWARE_NOTIFY_XHCI_RESET,
-				    &dev_addr, sizeof(dev_addr));
-	if (ret)
-		return ret;
-
-	/* Wait for vl805 to startup */
-	usleep_range(200, 1000);
-
-	pci_read_config_dword(pdev, VL805_PCI_CONFIG_VERSION_OFFSET,
-			      &version);
-exit:
-	pci_info(pdev, "VL805 firmware version %08x\n", version);
-
-	return 0;
-}
-EXPORT_SYMBOL_GPL(rpi_firmware_init_vl805);
 
 static const struct of_device_id rpi_firmware_of_match[] = {
 	{ .compatible = "raspberrypi,bcm2835-firmware", },

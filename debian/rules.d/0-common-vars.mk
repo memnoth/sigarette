@@ -157,7 +157,7 @@ do_doc_package=true
 else
 do_doc_package=false
 endif
-do_doc_package_content=true
+do_doc_package_content=false
 ifeq ($(full_build),false)
 do_doc_package_content=false
 endif
@@ -275,4 +275,4 @@ custom_override = \
  $(shell if [ -n "$($(1)_$(2))" ]; then echo "$($(1)_$(2))"; else echo "$($(1))"; fi)
 
 # selftests that Ubuntu cares about
-ubuntu_selftests = breakpoints bpf cpu-hotplug efivarfs memfd memory-hotplug mount net ptrace seccomp timers powerpc user ftrace
+ubuntu_selftests = breakpoints cpu-hotplug efivarfs memfd memory-hotplug mount net ptrace seccomp timers powerpc user ftrace

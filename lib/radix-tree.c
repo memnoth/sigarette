@@ -327,7 +327,7 @@ static __must_check int __radix_tree_preload(gfp_t gfp_mask, unsigned nr)
 	int ret = -ENOMEM;
 
 	/*
-	 * Nodes preloaded by one cgroup can be be used by another cgroup, so
+	 * Nodes preloaded by one cgroup can be used by another cgroup, so
 	 * they should never be accounted to any particular memory cgroup.
 	 */
 	gfp_mask &= ~__GFP_ACCOUNT;
@@ -1031,7 +1031,7 @@ void *radix_tree_tag_clear(struct radix_tree_root *root,
 {
 	struct radix_tree_node *node, *parent;
 	unsigned long maxindex;
-	int uninitialized_var(offset);
+	int offset;
 
 	radix_tree_load_root(root, &node, &maxindex);
 	if (index > maxindex)

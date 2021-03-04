@@ -129,7 +129,7 @@ static int afs_proc_cells_write(struct file *file, char *buf, size_t size)
 		}
 
 		if (test_and_set_bit(AFS_CELL_FL_NO_GC, &cell->flags))
-			afs_unuse_cell(net, cell);
+			afs_unuse_cell(net, cell, afs_cell_trace_unuse_no_pin);
 	} else {
 		goto inval;
 	}
@@ -309,6 +309,11 @@ static int afs_proc_cell_vlservers_show(struct seq_file *m, void *v)
 				   alist->preferred == i ? '>' : '-',
 				   &alist->addrs[i].transport);
 	}
+	seq_printf(m, " info: fl=%lx rtt=%d\n", vlserver->flags, vlserver->rtt);
+	seq_printf(m, " probe: fl=%x e=%d ac=%d out=%d\n",
+		   vlserver->probe.flags, vlserver->probe.error,
+		   vlserver->probe.abort_code,
+		   atomic_read(&vlserver->probe_outstanding));
 	return 0;
 }
 

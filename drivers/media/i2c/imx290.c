@@ -535,7 +535,7 @@ static int imx290_set_register_array(struct imx290 *imx290,
 	}
 
 	/* Provide 10ms settle time */
-	msleep(10);
+	usleep_range(10000, 11000);
 
 	return 0;
 }
@@ -647,7 +647,7 @@ static int imx290_set_ctrl(struct v4l2_ctrl *ctrl)
 		return 0;
 
 	switch (ctrl->id) {
-	case V4L2_CID_GAIN:
+	case V4L2_CID_ANALOGUE_GAIN:
 		ret = imx290_set_gain(imx290, ctrl->val);
 		break;
 	case V4L2_CID_EXPOSURE:
@@ -673,14 +673,14 @@ static int imx290_set_ctrl(struct v4l2_ctrl *ctrl)
 		if (ctrl->val) {
 			imx290_write_reg(imx290, IMX290_BLKLEVEL_LOW, 0x00);
 			imx290_write_reg(imx290, IMX290_BLKLEVEL_HIGH, 0x00);
-			msleep(10);
+			usleep_range(10000, 11000);
 			imx290_write_reg(imx290, IMX290_PGCTRL,
 					 (u8)(IMX290_PGCTRL_REGEN |
 					 IMX290_PGCTRL_THRU |
 					 IMX290_PGCTRL_MODE(ctrl->val)));
 		} else {
 			imx290_write_reg(imx290, IMX290_PGCTRL, 0x00);
-			msleep(10);
+			usleep_range(10000, 11000);
 			if (imx290->bpp == 10)
 				imx290_write_reg(imx290, IMX290_BLKLEVEL_LOW,
 						 0x3c);
@@ -1109,20 +1109,19 @@ exit:
 
 static int imx290_power_on(struct device *dev)
 {
-	struct i2c_client *client = to_i2c_client(dev);
-	struct v4l2_subdev *sd = i2c_get_clientdata(client);
+	struct v4l2_subdev *sd = dev_get_drvdata(dev);
 	struct imx290 *imx290 = to_imx290(sd);
 	int ret;
 
 	ret = clk_prepare_enable(imx290->xclk);
 	if (ret) {
-		dev_err(imx290->dev, "Failed to enable clock\n");
+		dev_err(dev, "Failed to enable clock\n");
 		return ret;
 	}
 
 	ret = regulator_bulk_enable(IMX290_NUM_SUPPLIES, imx290->supplies);
 	if (ret) {
-		dev_err(imx290->dev, "Failed to enable regulators\n");
+		dev_err(dev, "Failed to enable regulators\n");
 		clk_disable_unprepare(imx290->xclk);
 		return ret;
 	}
@@ -1139,8 +1138,7 @@ static int imx290_power_on(struct device *dev)
 
 static int imx290_power_off(struct device *dev)
 {
-	struct i2c_client *client = to_i2c_client(dev);
-	struct v4l2_subdev *sd = i2c_get_clientdata(client);
+	struct v4l2_subdev *sd = dev_get_drvdata(dev);
 	struct imx290 *imx290 = to_imx290(sd);
 
 	clk_disable_unprepare(imx290->xclk);
@@ -1328,10 +1326,10 @@ static int imx290_probe(struct i2c_client *client)
 	 */
 	imx290_entity_init_cfg(&imx290->sd, NULL);
 
-	v4l2_ctrl_handler_init(&imx290->ctrls, 4);
+	v4l2_ctrl_handler_init(&imx290->ctrls, 9);
 
 	v4l2_ctrl_new_std(&imx290->ctrls, &imx290_ctrl_ops,
-			  V4L2_CID_GAIN, 0, 238, 1, 0);
+			  V4L2_CID_ANALOGUE_GAIN, 0, 100, 1, 0);
 
 	mode = imx290->current_mode;
 	imx290->hblank = v4l2_ctrl_new_std(&imx290->ctrls, &imx290_ctrl_ops,
@@ -1397,6 +1395,9 @@ static int imx290_probe(struct i2c_client *client)
 		dev_err(dev, "Could not register media entity\n");
 		goto free_ctrl;
 	}
+
+	/* Initialize the frame format (this also sets imx290->current_mode) */
+	imx290_entity_init_cfg(&imx290->sd, NULL);
 
 	ret = v4l2_async_register_subdev(&imx290->sd);
 	if (ret < 0) {

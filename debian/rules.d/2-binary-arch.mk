@@ -63,6 +63,18 @@ define build_dkms =
 	CROSS_COMPILE=$(CROSS_COMPILE) $(SHELL) $(DROOT)/scripts/dkms-build $(dkms_dir) $(abi_release)-$* '$(call build_dkms_sign,$(builddir)/build-$*)' $(1) $(2) $(3) $(4) $(5)
 endef
 
+# nvidia_build_payload 450 450 450_450.102.04-0ubuntu0.20.04.1
+# nvidia_build_payload 450-server 450srv 50.102.04-0ubuntu0.20.04.1
+define nvidia_build_payload =
+	$(call build_dkms, $(bldinfo_pkg_name)-$*, $(pkgdir_bldinfo)/usr/lib/linux/$(abi_release)-$*/signatures, "", nvidia-$(2), pool/restricted/n/nvidia-graphics-drivers-$(1)/nvidia-kernel-source-$(1)_$(3)_$(arch).deb pool/restricted/n/nvidia-graphics-drivers-$(1)/nvidia-dkms-$(1)_$(3)_$(arch).deb)
+endef
+# nvidia_build 450
+# nvidia_build 450-server
+define nvidia_build =
+	$(call nvidia_build_payload,$(1),$(shell echo $(1) | sed -e 's/-server/srv/'),$(shell awk '/^nvidia-graphics-drivers-$(1) / {print($$2);}' debian/dkms-versions))
+
+endef
+
 define install_control =
 	for which in $(3);							\
 	do									\
@@ -291,9 +303,7 @@ endif
 	# The flavour specific headers image
 	# TODO: Would be nice if we didn't have to dupe the original builddir
 	install -d -m755 $(hdrdir)
-	cat $(builddir)/build-$*/.config | \
-		sed -e 's/.*CONFIG_DEBUG_INFO=.*/# CONFIG_DEBUG_INFO is not set/g' > \
-		$(hdrdir)/.config
+	cp $(builddir)/build-$*/.config $(hdrdir)
 	chmod 644 $(hdrdir)/.config
 	$(kmake) O=$(hdrdir) -j1 syncconfig prepare scripts
 	# We'll symlink this stuff
@@ -311,6 +321,8 @@ ifeq ($(build_arch),powerpc)
 	mkdir -p $(hdrdir)/arch/powerpc/lib
 	cp $(builddir)/build-$*/arch/powerpc/lib/*.o $(hdrdir)/arch/powerpc/lib
 endif
+	# Copy over scripts/module.lds for building external modules
+	cp $(builddir)/build-$*/scripts/module.lds $(hdrdir)/scripts
 	# Copy over the new retpoline extractor.
 	cp scripts/ubuntu-retpoline-extract-one $(hdrdir)/scripts
 	# Script to symlink everything up
@@ -401,17 +413,10 @@ endif
 	$(if $(filter true,$(enable_zfs)),$(call build_dkms, $(mods_pkg_name)-$*, $(pkgdir)/lib/modules/$(abi_release)-$*/kernel, $(dbgpkgdir_zfs), zfs, pool/universe/z/zfs-linux/zfs-dkms_$(dkms_zfs_linux_version)_all.deb))
 
 ifeq ($(do_dkms_nvidia),true)
-	$(call build_dkms, $(bldinfo_pkg_name)-$*, $(pkgdir_bldinfo)/usr/lib/linux/$(abi_release)-$*/signatures, "", nvidia-390, pool/restricted/n/nvidia-graphics-drivers-390/nvidia-kernel-source-390_$(dkms_nvidia_390_version)_$(arch).deb pool/restricted/n/nvidia-graphics-drivers-390/nvidia-dkms-390_$(dkms_nvidia_390_version)_$(arch).deb)
-	$(call build_dkms, $(bldinfo_pkg_name)-$*, $(pkgdir_bldinfo)/usr/lib/linux/$(abi_release)-$*/signatures, "", nvidia-435, pool/restricted/n/nvidia-graphics-drivers-435/nvidia-kernel-source-435_$(dkms_nvidia_435_version)_$(arch).deb pool/restricted/n/nvidia-graphics-drivers-435/nvidia-dkms-435_$(dkms_nvidia_435_version)_$(arch).deb)
-	$(call build_dkms, $(bldinfo_pkg_name)-$*, $(pkgdir_bldinfo)/usr/lib/linux/$(abi_release)-$*/signatures, "", nvidia-450, pool/restricted/n/nvidia-graphics-drivers-450/nvidia-kernel-source-450_$(dkms_nvidia_450_version)_$(arch).deb pool/restricted/n/nvidia-graphics-drivers-450/nvidia-dkms-450_$(dkms_nvidia_450_version)_$(arch).deb)
-	$(call build_dkms, $(bldinfo_pkg_name)-$*, $(pkgdir_bldinfo)/usr/lib/linux/$(abi_release)-$*/signatures, "", nvidia-455, pool/restricted/n/nvidia-graphics-drivers-455/nvidia-kernel-source-455_$(dkms_nvidia_455_version)_$(arch).deb pool/restricted/n/nvidia-graphics-drivers-455/nvidia-dkms-455_$(dkms_nvidia_455_version)_$(arch).deb)
-	$(call build_dkms, $(bldinfo_pkg_name)-$*, $(pkgdir_bldinfo)/usr/lib/linux/$(abi_release)-$*/signatures, "", nvidia-460, pool/restricted/n/nvidia-graphics-drivers-460/nvidia-kernel-source-460_$(dkms_nvidia_460_version)_$(arch).deb pool/restricted/n/nvidia-graphics-drivers-460/nvidia-dkms-460_$(dkms_nvidia_460_version)_$(arch).deb)
+	$(foreach series,$(nvidia_desktop_series),$(call nvidia_build,$(series)))
 endif
-
 ifeq ($(do_dkms_nvidia_server),true)
-	$(call build_dkms, $(bldinfo_pkg_name)-$*, $(pkgdir_bldinfo)/usr/lib/linux/$(abi_release)-$*/signatures, "", nvidia-418srv, pool/restricted/n/nvidia-graphics-drivers-418-server/nvidia-kernel-source-418-server_$(dkms_nvidia_418_server_version)_$(arch).deb pool/restricted/n/nvidia-graphics-drivers-418-server/nvidia-dkms-418-server_$(dkms_nvidia_418_server_version)_$(arch).deb)
-	$(call build_dkms, $(bldinfo_pkg_name)-$*, $(pkgdir_bldinfo)/usr/lib/linux/$(abi_release)-$*/signatures, "", nvidia-440srv, pool/restricted/n/nvidia-graphics-drivers-440-server/nvidia-kernel-source-440-server_$(dkms_nvidia_440_server_version)_$(arch).deb pool/restricted/n/nvidia-graphics-drivers-440-server/nvidia-dkms-440-server_$(dkms_nvidia_440_server_version)_$(arch).deb)
-	$(call build_dkms, $(bldinfo_pkg_name)-$*, $(pkgdir_bldinfo)/usr/lib/linux/$(abi_release)-$*/signatures, "", nvidia-450srv, pool/restricted/n/nvidia-graphics-drivers-450-server/nvidia-kernel-source-450-server_$(dkms_nvidia_450_server_version)_$(arch).deb pool/restricted/n/nvidia-graphics-drivers-450-server/nvidia-dkms-450-server_$(dkms_nvidia_450_server_version)_$(arch).deb)
+	$(foreach series,$(nvidia_server_series),$(call nvidia_build,$(series)))
 endif
 
 ifneq ($(skipdbg),true)
@@ -491,6 +496,11 @@ endif
 	install -m644 $(abidir)/$*.compiler \
 		$(pkgdir_bldinfo)/usr/lib/linux/$(abi_release)-$*/compiler
 
+ifneq ($(full_build),false)
+	# Clean out this flavours build directory.
+	rm -rf $(builddir)/build-$*
+endif
+
 headers_tmp := $(CURDIR)/debian/tmp-headers
 headers_dir := $(CURDIR)/debian/linux-libc-dev
 
@@ -551,7 +561,7 @@ binary-arch-headers: install-arch-headers
 	dh_testdir
 	dh_testroot
 ifeq ($(do_libc_dev_package),true)
-ifneq ($(DEBIAN),debian.master)
+ifeq ($(filter debian.master%,$(DEBIAN)),)
 	echo "non-master branch building linux-libc-dev, aborting"
 	exit 1
 endif
@@ -636,8 +646,6 @@ ifeq ($(do_cloud_tools),true)
 endif
 
 ifneq ($(full_build),false)
-	# Clean out this flavours build directory.
-	rm -rf $(builddir)/build-$*
 	# Clean out the debugging package source directory.
 	rm -rf $(dbgpkgdir)
 endif

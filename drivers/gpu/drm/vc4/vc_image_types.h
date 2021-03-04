@@ -120,7 +120,7 @@ enum {
 	/* 32bpp, corresponding to BGRA with unused alpha */
 	VC_IMAGE_BGRX8888,
 
-	/* Y as a plane, then UV byte interleaved in plane with with same pitch,
+	/* Y as a plane, then UV byte interleaved in plane with same pitch,
 	 * half height
 	 */
 	VC_IMAGE_YUV420SP,

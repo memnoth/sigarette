@@ -3,7 +3,7 @@
 
 / {
 	chosen {
-		bootargs = "coherent_pool=1M snd_bcm2835.enable_compat_alsa=0 snd_bcm2835.enable_hdmi=1 snd_bcm2835.enable_headphones=1";
+		bootargs = "coherent_pool=1M snd_bcm2835.enable_compat_alsa=0 snd_bcm2835.enable_hdmi=1";
 		/delete-property/ stdout-path;
 	};
 
@@ -21,6 +21,7 @@
 			/* Add label */
 		};
 
+#ifndef BCM2711
 		pixelvalve0: pixelvalve@7e206000 {
 			/* Add label */
 			status = "disabled";
@@ -30,6 +31,7 @@
 			/* Add label */
 			status = "disabled";
 		};
+#endif
 
 		/delete-node/ sdhci@7e300000;
 
@@ -113,10 +115,12 @@
 			status = "disabled";
 		};
 
+#ifndef BCM2711
 		pixelvalve2: pixelvalve@7e807000 {
 			/* Add label */
 			status = "disabled";
 		};
+#endif
 
 		hdmi@7e902000 { /* hdmi */
 			status = "disabled";
@@ -132,11 +136,13 @@
 				     <2 0>;
 		};
 
+#ifndef BCM2711
 		v3d@7ec00000 { /* vd3 */
 			compatible = "brcm,vc4-v3d";
 			power-domains = <&power RPI_POWER_DOMAIN_V3D>;
 			status = "disabled";
 		};
+#endif
 
 		axiperf: axiperf {
 			compatible = "brcm,bcm2835-axiperf";
@@ -160,6 +166,12 @@
 
 	dpi_18bit_gpio0: dpi_18bit_gpio0 {
 		brcm,pins = <0 1 2 3 4 5 6 7 8 9 10 11
+			     12 13 14 15 16 17 18 19
+			     20 21>;
+		brcm,function = <BCM2835_FSEL_ALT2>;
+	};
+	dpi_18bit_gpio2: dpi_18bit_gpio2 {
+		brcm,pins = <2 3 4 5 6 7 8 9 10 11
 			     12 13 14 15 16 17 18 19
 			     20 21>;
 		brcm,function = <BCM2835_FSEL_ALT2>;

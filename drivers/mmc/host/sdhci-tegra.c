@@ -96,7 +96,16 @@
 #define NVQUIRK_ENABLE_SDR50				BIT(3)
 #define NVQUIRK_ENABLE_SDR104				BIT(4)
 #define NVQUIRK_ENABLE_DDR50				BIT(5)
+/*
+ * HAS_PADCALIB NVQUIRK is for SoC's supporting auto calibration of pads
+ * drive strength.
+ */
 #define NVQUIRK_HAS_PADCALIB				BIT(6)
+/*
+ * NEEDS_PAD_CONTROL NVQUIRK is for SoC's having separate 3V3 and 1V8 pads.
+ * 3V3/1V8 pad selection happens through pinctrl state selection depending
+ * on the signaling mode.
+ */
 #define NVQUIRK_NEEDS_PAD_CONTROL			BIT(7)
 #define NVQUIRK_DIS_CARD_CLK_CONFIG_TAP			BIT(8)
 #define NVQUIRK_CQHCI_DCMD_R1B_CMD_TIMING		BIT(9)
@@ -1263,7 +1272,7 @@ static void tegra_sdhci_set_timeout(struct sdhci_host *host,
 	 * busy wait mode.
 	 */
 	val = sdhci_readl(host, SDHCI_TEGRA_VENDOR_MISC_CTRL);
-	if (cmd && cmd->busy_timeout >= 11 * HZ)
+	if (cmd && cmd->busy_timeout >= 11 * MSEC_PER_SEC)
 		val |= SDHCI_MISC_CTRL_ERASE_TIMEOUT_LIMIT;
 	else
 		val &= ~SDHCI_MISC_CTRL_ERASE_TIMEOUT_LIMIT;
@@ -1651,11 +1660,8 @@ static int sdhci_tegra_probe(struct platform_device *pdev)
 
 	clk = devm_clk_get(mmc_dev(host->mmc), NULL);
 	if (IS_ERR(clk)) {
-		rc = PTR_ERR(clk);
-
-		if (rc != -EPROBE_DEFER)
-			dev_err(&pdev->dev, "failed to get clock: %d\n", rc);
-
+		rc = dev_err_probe(&pdev->dev, PTR_ERR(clk),
+				   "failed to get clock\n");
 		goto err_clk_get;
 	}
 	clk_prepare_enable(clk);
@@ -1776,6 +1782,7 @@ static SIMPLE_DEV_PM_OPS(sdhci_tegra_dev_pm_ops, sdhci_tegra_suspend,
 static struct platform_driver sdhci_tegra_driver = {
 	.driver		= {
 		.name	= "sdhci-tegra",
+		.probe_type = PROBE_PREFER_ASYNCHRONOUS,
 		.of_match_table = sdhci_tegra_dt_match,
 		.pm	= &sdhci_tegra_dev_pm_ops,
 	},

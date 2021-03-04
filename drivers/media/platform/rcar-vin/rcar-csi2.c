@@ -320,6 +320,10 @@ static const struct rcar_csi2_format rcar_csi2_formats[] = {
 	{ .code = MEDIA_BUS_FMT_YUYV8_1X16,	.datatype = 0x1e, .bpp = 16 },
 	{ .code = MEDIA_BUS_FMT_UYVY8_2X8,	.datatype = 0x1e, .bpp = 16 },
 	{ .code = MEDIA_BUS_FMT_YUYV10_2X10,	.datatype = 0x1e, .bpp = 20 },
+	{ .code = MEDIA_BUS_FMT_SBGGR8_1X8,     .datatype = 0x2a, .bpp = 8 },
+	{ .code = MEDIA_BUS_FMT_SGBRG8_1X8,     .datatype = 0x2a, .bpp = 8 },
+	{ .code = MEDIA_BUS_FMT_SGRBG8_1X8,     .datatype = 0x2a, .bpp = 8 },
+	{ .code = MEDIA_BUS_FMT_SRGGB8_1X8,     .datatype = 0x2a, .bpp = 8 },
 };
 
 static const struct rcar_csi2_format *rcsi2_code_to_fmt(unsigned int code)
@@ -344,7 +348,7 @@ enum rcar_csi2_pads {
 
 struct rcar_csi2_info {
 	int (*init_phtw)(struct rcar_csi2 *priv, unsigned int mbps);
-	int (*confirm_start)(struct rcar_csi2 *priv);
+	int (*phy_post_init)(struct rcar_csi2 *priv);
 	const struct rcsi2_mbps_reg *hsfreqrange;
 	unsigned int csi0clkfreqrange;
 	unsigned int num_channels;
@@ -409,13 +413,13 @@ static void rcsi2_exit_standby(struct rcar_csi2 *priv)
 }
 
 static int rcsi2_wait_phy_start(struct rcar_csi2 *priv,
-				unsigned int active_lanes)
+				unsigned int lanes)
 {
 	unsigned int timeout;
 
 	/* Wait for the clock and data lanes to enter LP-11 state. */
 	for (timeout = 0; timeout <= 20; timeout++) {
-		const u32 lane_mask = (1 << active_lanes) - 1;
+		const u32 lane_mask = (1 << lanes) - 1;
 
 		if ((rcsi2_read(priv, PHCLM_REG) & PHCLM_STOPSTATECKL)  &&
 		    (rcsi2_read(priv, PHDLM_REG) & lane_mask) == lane_mask)
@@ -448,7 +452,7 @@ static int rcsi2_set_phypll(struct rcar_csi2 *priv, unsigned int mbps)
 }
 
 static int rcsi2_calc_mbps(struct rcar_csi2 *priv, unsigned int bpp,
-			   unsigned int active_lanes)
+			   unsigned int lanes)
 {
 	struct v4l2_subdev *source;
 	struct v4l2_ctrl *ctrl;
@@ -473,19 +477,20 @@ static int rcsi2_calc_mbps(struct rcar_csi2 *priv, unsigned int bpp,
 	 * bps = link_freq * 2
 	 */
 	mbps = v4l2_ctrl_g_ctrl_int64(ctrl) * bpp;
-	do_div(mbps, active_lanes * 1000000);
+	do_div(mbps, lanes * 1000000);
 
 	return mbps;
 }
 
-static int rcsi2_config_active_lanes(struct rcar_csi2 *priv,
-				     unsigned int *active_lanes)
+static int rcsi2_get_active_lanes(struct rcar_csi2 *priv,
+				  unsigned int *lanes)
 {
 	struct v4l2_mbus_config mbus_config = { 0 };
-	unsigned int num_lanes = (-1U);
+	unsigned int num_lanes = UINT_MAX;
 	int ret;
 
-	*active_lanes = priv->lanes;
+	*lanes = priv->lanes;
+
 	ret = v4l2_subdev_call(priv->remote, pad, get_mbus_config,
 			       priv->remote_pad, &mbus_config);
 	if (ret == -ENOIOCTLCMD) {
@@ -520,7 +525,7 @@ static int rcsi2_config_active_lanes(struct rcar_csi2 *priv,
 		return -EINVAL;
 	}
 
-	*active_lanes = num_lanes;
+	*lanes = num_lanes;
 
 	return 0;
 }
@@ -529,7 +534,7 @@ static int rcsi2_start_receiver(struct rcar_csi2 *priv)
 {
 	const struct rcar_csi2_format *format;
 	u32 phycnt, vcdt = 0, vcdt2 = 0, fld = 0;
-	unsigned int active_lanes;
+	unsigned int lanes;
 	unsigned int i;
 	int mbps, ret;
 
@@ -575,14 +580,14 @@ static int rcsi2_start_receiver(struct rcar_csi2 *priv)
 	 * Get the number of active data lanes inspecting the remote mbus
 	 * configuration.
 	 */
-	ret = rcsi2_config_active_lanes(priv, &active_lanes);
+	ret = rcsi2_get_active_lanes(priv, &lanes);
 	if (ret)
 		return ret;
 
 	phycnt = PHYCNT_ENABLECLK;
-	phycnt |= (1 << active_lanes) - 1;
+	phycnt |= (1 << lanes) - 1;
 
-	mbps = rcsi2_calc_mbps(priv, format->bpp, active_lanes);
+	mbps = rcsi2_calc_mbps(priv, format->bpp, lanes);
 	if (mbps < 0)
 		return mbps;
 
@@ -629,13 +634,13 @@ static int rcsi2_start_receiver(struct rcar_csi2 *priv)
 	rcsi2_write(priv, PHYCNT_REG, phycnt | PHYCNT_SHUTDOWNZ);
 	rcsi2_write(priv, PHYCNT_REG, phycnt | PHYCNT_SHUTDOWNZ | PHYCNT_RSTZ);
 
-	ret = rcsi2_wait_phy_start(priv, active_lanes);
+	ret = rcsi2_wait_phy_start(priv, lanes);
 	if (ret)
 		return ret;
 
-	/* Confirm start */
-	if (priv->info->confirm_start) {
-		ret = priv->info->confirm_start(priv);
+	/* Run post PHY start initialization, if needed. */
+	if (priv->info->phy_post_init) {
+		ret = priv->info->phy_post_init(priv);
 		if (ret)
 			return ret;
 	}
@@ -871,31 +876,33 @@ static int rcsi2_parse_dt(struct rcar_csi2 *priv)
 {
 	struct v4l2_async_subdev *asd;
 	struct fwnode_handle *fwnode;
-	struct device_node *ep;
-	struct v4l2_fwnode_endpoint v4l2_ep = { .bus_type = 0 };
+	struct fwnode_handle *ep;
+	struct v4l2_fwnode_endpoint v4l2_ep = {
+		.bus_type = V4L2_MBUS_CSI2_DPHY
+	};
 	int ret;
 
-	ep = of_graph_get_endpoint_by_regs(priv->dev->of_node, 0, 0);
+	ep = fwnode_graph_get_endpoint_by_id(dev_fwnode(priv->dev), 0, 0, 0);
 	if (!ep) {
 		dev_err(priv->dev, "Not connected to subdevice\n");
 		return -EINVAL;
 	}
 
-	ret = v4l2_fwnode_endpoint_parse(of_fwnode_handle(ep), &v4l2_ep);
+	ret = v4l2_fwnode_endpoint_parse(ep, &v4l2_ep);
 	if (ret) {
 		dev_err(priv->dev, "Could not parse v4l2 endpoint\n");
-		of_node_put(ep);
+		fwnode_handle_put(ep);
 		return -EINVAL;
 	}
 
 	ret = rcsi2_parse_v4l2(priv, &v4l2_ep);
 	if (ret) {
-		of_node_put(ep);
+		fwnode_handle_put(ep);
 		return ret;
 	}
 
-	fwnode = fwnode_graph_get_remote_endpoint(of_fwnode_handle(ep));
-	of_node_put(ep);
+	fwnode = fwnode_graph_get_remote_endpoint(ep);
+	fwnode_handle_put(ep);
 
 	dev_dbg(priv->dev, "Found '%pOF'\n", to_of_node(fwnode));
 
@@ -1031,7 +1038,7 @@ static int rcsi2_init_phtw_v3m_e3(struct rcar_csi2 *priv, unsigned int mbps)
 	return rcsi2_phtw_write_mbps(priv, mbps, phtw_mbps_v3m_e3, 0x44);
 }
 
-static int rcsi2_confirm_start_v3m_e3(struct rcar_csi2 *priv)
+static int rcsi2_phy_post_init_v3m_e3(struct rcar_csi2 *priv)
 {
 	static const struct phtw_value step1[] = {
 		{ .data = 0xee, .code = 0x34 },
@@ -1115,7 +1122,7 @@ static const struct rcar_csi2_info rcar_csi2_info_r8a77965 = {
 
 static const struct rcar_csi2_info rcar_csi2_info_r8a77970 = {
 	.init_phtw = rcsi2_init_phtw_v3m_e3,
-	.confirm_start = rcsi2_confirm_start_v3m_e3,
+	.phy_post_init = rcsi2_phy_post_init_v3m_e3,
 	.num_channels = 4,
 };
 
@@ -1128,7 +1135,7 @@ static const struct rcar_csi2_info rcar_csi2_info_r8a77980 = {
 
 static const struct rcar_csi2_info rcar_csi2_info_r8a77990 = {
 	.init_phtw = rcsi2_init_phtw_v3m_e3,
-	.confirm_start = rcsi2_confirm_start_v3m_e3,
+	.phy_post_init = rcsi2_phy_post_init_v3m_e3,
 	.num_channels = 2,
 };
 
@@ -1144,6 +1151,10 @@ static const struct of_device_id rcar_csi2_of_table[] = {
 	{
 		.compatible = "renesas,r8a774c0-csi2",
 		.data = &rcar_csi2_info_r8a77990,
+	},
+	{
+		.compatible = "renesas,r8a774e1-csi2",
+		.data = &rcar_csi2_info_r8a7795,
 	},
 	{
 		.compatible = "renesas,r8a7795-csi2",

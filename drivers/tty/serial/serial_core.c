@@ -14,6 +14,7 @@
 #include <linux/sched/signal.h>
 #include <linux/init.h>
 #include <linux/console.h>
+#include <linux/gpio/consumer.h>
 #include <linux/of.h>
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
@@ -1120,7 +1121,7 @@ out:
 	return ret;
 }
 
-static int uart_do_autoconfig(struct tty_struct *tty,struct uart_state *state)
+static int uart_do_autoconfig(struct tty_struct *tty, struct uart_state *state)
 {
 	struct tty_port *port = &state->port;
 	struct uart_port *uport;
@@ -1466,6 +1467,10 @@ static void uart_set_ldisc(struct tty_struct *tty)
 {
 	struct uart_state *state = tty->driver_data;
 	struct uart_port *uport;
+	struct tty_port *port = &state->port;
+
+	if (!tty_port_initialized(port))
+		return;
 
 	mutex_lock(&state->port.mutex);
 	uport = uart_port_check(state);
@@ -1523,6 +1528,7 @@ static void uart_set_termios(struct tty_struct *tty,
 	/* Handle transition away from B0 status */
 	else if (!(old_termios->c_cflag & CBAUD) && (cflag & CBAUD)) {
 		unsigned int mask = TIOCM_DTR;
+
 		if (!(cflag & CRTSCTS) || !tty_throttled(tty))
 			mask |= TIOCM_RTS;
 		uart_set_mctrl(uport, mask);
@@ -2095,7 +2101,7 @@ uart_set_options(struct uart_port *port, struct console *co,
 	switch (parity) {
 	case 'o': case 'O':
 		termios.c_cflag |= PARODD;
-		/*fall through*/
+		fallthrough;
 	case 'e': case 'E':
 		termios.c_cflag |= PARENB;
 		break;
@@ -2275,6 +2281,7 @@ int uart_resume_port(struct uart_driver *drv, struct uart_port *uport)
 		if (console_suspend_enabled || !uart_console(uport)) {
 			/* Protected by port mutex for now */
 			struct tty_struct *tty = port->tty;
+
 			ret = ops->startup(uport);
 			if (ret == 0) {
 				if (tty)
@@ -2623,7 +2630,7 @@ static ssize_t uartclk_show(struct device *dev,
 	struct tty_port *port = dev_get_drvdata(dev);
 
 	uart_get_info(port, &tmp);
-	return snprintf(buf, PAGE_SIZE, "%d\n", tmp.baud_base * 16);
+	return sprintf(buf, "%d\n", tmp.baud_base * 16);
 }
 
 static ssize_t type_show(struct device *dev,
@@ -2633,7 +2640,7 @@ static ssize_t type_show(struct device *dev,
 	struct tty_port *port = dev_get_drvdata(dev);
 
 	uart_get_info(port, &tmp);
-	return snprintf(buf, PAGE_SIZE, "%d\n", tmp.type);
+	return sprintf(buf, "%d\n", tmp.type);
 }
 
 static ssize_t line_show(struct device *dev,
@@ -2643,7 +2650,7 @@ static ssize_t line_show(struct device *dev,
 	struct tty_port *port = dev_get_drvdata(dev);
 
 	uart_get_info(port, &tmp);
-	return snprintf(buf, PAGE_SIZE, "%d\n", tmp.line);
+	return sprintf(buf, "%d\n", tmp.line);
 }
 
 static ssize_t port_show(struct device *dev,
@@ -2657,7 +2664,7 @@ static ssize_t port_show(struct device *dev,
 	ioaddr = tmp.port;
 	if (HIGH_BITS_OFFSET)
 		ioaddr |= (unsigned long)tmp.port_high << HIGH_BITS_OFFSET;
-	return snprintf(buf, PAGE_SIZE, "0x%lX\n", ioaddr);
+	return sprintf(buf, "0x%lX\n", ioaddr);
 }
 
 static ssize_t irq_show(struct device *dev,
@@ -2667,7 +2674,7 @@ static ssize_t irq_show(struct device *dev,
 	struct tty_port *port = dev_get_drvdata(dev);
 
 	uart_get_info(port, &tmp);
-	return snprintf(buf, PAGE_SIZE, "%d\n", tmp.irq);
+	return sprintf(buf, "%d\n", tmp.irq);
 }
 
 static ssize_t flags_show(struct device *dev,
@@ -2677,7 +2684,7 @@ static ssize_t flags_show(struct device *dev,
 	struct tty_port *port = dev_get_drvdata(dev);
 
 	uart_get_info(port, &tmp);
-	return snprintf(buf, PAGE_SIZE, "0x%X\n", tmp.flags);
+	return sprintf(buf, "0x%X\n", tmp.flags);
 }
 
 static ssize_t xmit_fifo_size_show(struct device *dev,
@@ -2687,7 +2694,7 @@ static ssize_t xmit_fifo_size_show(struct device *dev,
 	struct tty_port *port = dev_get_drvdata(dev);
 
 	uart_get_info(port, &tmp);
-	return snprintf(buf, PAGE_SIZE, "%d\n", tmp.xmit_fifo_size);
+	return sprintf(buf, "%d\n", tmp.xmit_fifo_size);
 }
 
 static ssize_t close_delay_show(struct device *dev,
@@ -2697,7 +2704,7 @@ static ssize_t close_delay_show(struct device *dev,
 	struct tty_port *port = dev_get_drvdata(dev);
 
 	uart_get_info(port, &tmp);
-	return snprintf(buf, PAGE_SIZE, "%d\n", tmp.close_delay);
+	return sprintf(buf, "%d\n", tmp.close_delay);
 }
 
 static ssize_t closing_wait_show(struct device *dev,
@@ -2707,7 +2714,7 @@ static ssize_t closing_wait_show(struct device *dev,
 	struct tty_port *port = dev_get_drvdata(dev);
 
 	uart_get_info(port, &tmp);
-	return snprintf(buf, PAGE_SIZE, "%d\n", tmp.closing_wait);
+	return sprintf(buf, "%d\n", tmp.closing_wait);
 }
 
 static ssize_t custom_divisor_show(struct device *dev,
@@ -2717,7 +2724,7 @@ static ssize_t custom_divisor_show(struct device *dev,
 	struct tty_port *port = dev_get_drvdata(dev);
 
 	uart_get_info(port, &tmp);
-	return snprintf(buf, PAGE_SIZE, "%d\n", tmp.custom_divisor);
+	return sprintf(buf, "%d\n", tmp.custom_divisor);
 }
 
 static ssize_t io_type_show(struct device *dev,
@@ -2727,7 +2734,7 @@ static ssize_t io_type_show(struct device *dev,
 	struct tty_port *port = dev_get_drvdata(dev);
 
 	uart_get_info(port, &tmp);
-	return snprintf(buf, PAGE_SIZE, "%d\n", tmp.io_type);
+	return sprintf(buf, "%d\n", tmp.io_type);
 }
 
 static ssize_t iomem_base_show(struct device *dev,
@@ -2737,7 +2744,7 @@ static ssize_t iomem_base_show(struct device *dev,
 	struct tty_port *port = dev_get_drvdata(dev);
 
 	uart_get_info(port, &tmp);
-	return snprintf(buf, PAGE_SIZE, "0x%lX\n", (unsigned long)tmp.iomem_base);
+	return sprintf(buf, "0x%lX\n", (unsigned long)tmp.iomem_base);
 }
 
 static ssize_t iomem_reg_shift_show(struct device *dev,
@@ -2747,7 +2754,7 @@ static ssize_t iomem_reg_shift_show(struct device *dev,
 	struct tty_port *port = dev_get_drvdata(dev);
 
 	uart_get_info(port, &tmp);
-	return snprintf(buf, PAGE_SIZE, "%d\n", tmp.iomem_reg_shift);
+	return sprintf(buf, "%d\n", tmp.iomem_reg_shift);
 }
 
 static ssize_t console_show(struct device *dev,
@@ -3257,9 +3264,7 @@ int uart_get_rs485_mode(struct uart_port *port)
 	if (IS_ERR(port->rs485_term_gpio)) {
 		ret = PTR_ERR(port->rs485_term_gpio);
 		port->rs485_term_gpio = NULL;
-		if (ret != -EPROBE_DEFER)
-			dev_err(dev, "Cannot get rs485-term-gpios\n");
-		return ret;
+		return dev_err_probe(dev, ret, "Cannot get rs485-term-gpios\n");
 	}
 
 	return 0;

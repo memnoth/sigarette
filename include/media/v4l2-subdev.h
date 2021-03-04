@@ -309,7 +309,7 @@ struct v4l2_subdev_audio_ops {
 };
 
 /**
- * enum v4l2_mbus_frame_desc_entry - media bus frame description flags
+ * enum v4l2_mbus_frame_desc_flags - media bus frame description flags
  *
  * @V4L2_MBUS_FRAME_DESC_FL_LEN_MAX:
  *	Indicates that &struct v4l2_mbus_frame_desc_entry->length field
@@ -381,7 +381,7 @@ struct v4l2_mbus_frame_desc {
  *	OUTPUT device. This is ignored by video capture devices.
  *
  * @g_input_status: get input status. Same as the status field in the
- *	&struct &v4l2_input
+ *	&struct v4l2_input
  *
  * @s_stream: used to notify the driver that a video stream will start or has
  *	stopped.
@@ -556,9 +556,9 @@ struct v4l2_subdev_ir_parameters {
  *
  * @rx_read: Reads received codes or pulse width data.
  *	The semantics are similar to a non-blocking read() call.
- * @rx_g_parameters: Get the current operating parameters and state of the
+ * @rx_g_parameters: Get the current operating parameters and state of
  *	the IR receiver.
- * @rx_s_parameters: Set the current operating parameters and state of the
+ * @rx_s_parameters: Set the current operating parameters and state of
  *	the IR receiver.  It is recommended to call
  *	[rt]x_g_parameters first to fill out the current state, and only change
  *	the fields that need to be changed.  Upon return, the actual device
@@ -572,9 +572,9 @@ struct v4l2_subdev_ir_parameters {
  *
  * @tx_write: Writes codes or pulse width data for transmission.
  *	The semantics are similar to a non-blocking write() call.
- * @tx_g_parameters: Get the current operating parameters and state of the
+ * @tx_g_parameters: Get the current operating parameters and state of
  *	the IR transmitter.
- * @tx_s_parameters: Set the current operating parameters and state of the
+ * @tx_s_parameters: Set the current operating parameters and state of
  *	the IR transmitter.  It is recommended to call
  *	[rt]x_g_parameters first to fill out the current state, and only change
  *	the fields that need to be changed.  Upon return, the actual device
@@ -672,7 +672,7 @@ struct v4l2_subdev_pad_config {
  *		     possible configuration from the remote end, likely calling
  *		     this operation as close as possible to stream on time. The
  *		     operation shall fail if the pad index it has been called on
- *		     is not valid.
+ *		     is not valid or in case of unrecoverable failures.
  *
  * @set_mbus_config: set the media bus configuration of a remote sub-device.
  *		     This operations is intended to allow, in combination with
@@ -682,7 +682,8 @@ struct v4l2_subdev_pad_config {
  *		     not supported, but the driver shall update the content of
  *		     the %config argument to reflect what has been actually
  *		     applied to the hardware. The operation shall fail if the
- *		     pad index it has been called on is not valid.
+ *		     pad index it has been called on is not valid or in case of
+ *		     unrecoverable failures.
  */
 struct v4l2_subdev_pad_ops {
 	int (*init_cfg)(struct v4l2_subdev *sd,
@@ -947,10 +948,10 @@ struct v4l2_subdev_fh {
  * @cfg: pointer to &struct v4l2_subdev_pad_config array.
  * @pad: index of the pad in the @cfg array.
  */
-static inline struct v4l2_mbus_framefmt
-*v4l2_subdev_get_try_format(struct v4l2_subdev *sd,
-			    struct v4l2_subdev_pad_config *cfg,
-			    unsigned int pad)
+static inline struct v4l2_mbus_framefmt *
+v4l2_subdev_get_try_format(struct v4l2_subdev *sd,
+			   struct v4l2_subdev_pad_config *cfg,
+			   unsigned int pad)
 {
 	if (WARN_ON(pad >= sd->entity.num_pads))
 		pad = 0;
@@ -965,10 +966,10 @@ static inline struct v4l2_mbus_framefmt
  * @cfg: pointer to &struct v4l2_subdev_pad_config array.
  * @pad: index of the pad in the @cfg array.
  */
-static inline struct v4l2_rect
-*v4l2_subdev_get_try_crop(struct v4l2_subdev *sd,
-			  struct v4l2_subdev_pad_config *cfg,
-			  unsigned int pad)
+static inline struct v4l2_rect *
+v4l2_subdev_get_try_crop(struct v4l2_subdev *sd,
+			 struct v4l2_subdev_pad_config *cfg,
+			 unsigned int pad)
 {
 	if (WARN_ON(pad >= sd->entity.num_pads))
 		pad = 0;
@@ -976,22 +977,23 @@ static inline struct v4l2_rect
 }
 
 /**
- * v4l2_subdev_get_try_crop - ancillary routine to call
+ * v4l2_subdev_get_try_compose - ancillary routine to call
  *	&struct v4l2_subdev_pad_config->try_compose
  *
  * @sd: pointer to &struct v4l2_subdev
  * @cfg: pointer to &struct v4l2_subdev_pad_config array.
  * @pad: index of the pad in the @cfg array.
  */
-static inline struct v4l2_rect
-*v4l2_subdev_get_try_compose(struct v4l2_subdev *sd,
-			     struct v4l2_subdev_pad_config *cfg,
-			     unsigned int pad)
+static inline struct v4l2_rect *
+v4l2_subdev_get_try_compose(struct v4l2_subdev *sd,
+			    struct v4l2_subdev_pad_config *cfg,
+			    unsigned int pad)
 {
 	if (WARN_ON(pad >= sd->entity.num_pads))
 		pad = 0;
 	return &cfg[pad].try_compose;
 }
+
 #endif
 
 extern const struct v4l2_file_operations v4l2_subdev_fops;
@@ -1048,8 +1050,8 @@ static inline void *v4l2_get_subdev_hostdata(const struct v4l2_subdev *sd)
  * v4l2_subdev_get_fwnode_pad_1_to_1 - Get pad number from a subdev fwnode
  *                                     endpoint, assuming 1:1 port:pad
  *
- * @entity - Pointer to the subdev entity
- * @endpoint - Pointer to a parsed fwnode endpoint
+ * @entity: Pointer to the subdev entity
+ * @endpoint: Pointer to a parsed fwnode endpoint
  *
  * This function can be used as the .get_fwnode_pad operation for
  * subdevices that map port numbers and pad indexes 1:1. If the endpoint

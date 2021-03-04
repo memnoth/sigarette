@@ -38,6 +38,8 @@
 #define RREG32(reg) ioread32(((void __iomem *)mdev->rmmio) + (reg))
 #define WREG32(reg, v) iowrite32(v, ((void __iomem *)mdev->rmmio) + (reg))
 
+#define MGA_BIOS_OFFSET		0x7ffc
+
 #define ATTR_INDEX 0x1fc0
 #define ATTR_DATA 0x1fc1
 
@@ -58,6 +60,12 @@
 	do {							\
 		WREG8(MGAREG_SEQ_INDEX, reg);			\
 		WREG8(MGAREG_SEQ_DATA, v);			\
+	} while (0)						\
+
+#define RREG_CRT(reg, v)					\
+	do {							\
+		WREG8(MGAREG_CRTC_INDEX, reg);			\
+		v = RREG8(MGAREG_CRTC_DATA);			\
 	} while (0)						\
 
 #define WREG_CRT(reg, v)					\
@@ -123,6 +131,8 @@ struct mga_mc {
 };
 
 enum mga_type {
+	G200_PCI,
+	G200_AGP,
 	G200_SE_A,
 	G200_SE_B,
 	G200_WB,
@@ -142,7 +152,7 @@ enum mga_type {
 #define IS_G200_SE(mdev) (mdev->type == G200_SE_A || mdev->type == G200_SE_B)
 
 struct mga_device {
-	struct drm_device		*dev;
+	struct drm_device		base;
 	unsigned long			flags;
 
 	resource_size_t			rmmio_base;
@@ -155,14 +165,23 @@ struct mga_device {
 	size_t				vram_fb_available;
 
 	enum mga_type			type;
-	int				has_sdram;
 
 	int bpp_shifts[4];
 
 	int fb_mtrr;
 
-	/* SE model number stored in reg 0x1e24 */
-	u32 unique_rev_id;
+	union {
+		struct {
+			long ref_clk;
+			long pclk_min;
+			long pclk_max;
+		} g200;
+		struct {
+			/* SE model number stored in reg 0x1e24 */
+			u32 unique_rev_id;
+		} g200se;
+	} model;
+
 
 	struct mga_connector connector;
 	struct drm_simple_display_pipe display_pipe;
@@ -170,7 +189,7 @@ struct mga_device {
 
 static inline struct mga_device *to_mga_device(struct drm_device *dev)
 {
-	return dev->dev_private;
+	return container_of(dev, struct mga_device, base);
 }
 
 static inline enum mga_type
@@ -188,16 +207,11 @@ mgag200_flags_from_driver_data(kernel_ulong_t driver_data)
 				/* mgag200_mode.c */
 int mgag200_modeset_init(struct mga_device *mdev);
 
-				/* mgag200_main.c */
-int mgag200_driver_load(struct drm_device *dev, unsigned long flags);
-void mgag200_driver_unload(struct drm_device *dev);
-
 				/* mgag200_i2c.c */
 struct mga_i2c_chan *mgag200_i2c_create(struct drm_device *dev);
 void mgag200_i2c_destroy(struct mga_i2c_chan *i2c);
 
+				/* mgag200_mm.c */
 int mgag200_mm_init(struct mga_device *mdev);
-void mgag200_mm_fini(struct mga_device *mdev);
-int mgag200_mmap(struct file *filp, struct vm_area_struct *vma);
 
 #endif				/* __MGAG200_DRV_H__ */

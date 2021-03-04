@@ -55,7 +55,7 @@ static void rtas_stop_self(void)
 	panic("Alas, I survived.\n");
 }
 
-static void pseries_mach_cpu_die(void)
+static void pseries_cpu_offline_self(void)
 {
 	unsigned int hwcpu = hard_smp_processor_id();
 
@@ -90,6 +90,9 @@ static int pseries_cpu_disable(void)
 		xive_smp_disable_cpu();
 	else
 		xics_migrate_irqs_away();
+
+	cleanup_cpu_mmu_context();
+
 	return 0;
 }
 
@@ -102,7 +105,7 @@ static int pseries_cpu_disable(void)
  * to self-destroy so that the cpu-offline thread can send the CPU_DEAD
  * notifications.
  *
- * OTOH, pseries_mach_cpu_die() is called by the @cpu when it wants to
+ * OTOH, pseries_cpu_offline_self() is called by the @cpu when it wants to
  * self-destruct.
  */
 static void pseries_cpu_die(unsigned int cpu)
@@ -269,7 +272,6 @@ static int dlpar_offline_cpu(struct device_node *dn)
 				break;
 
 			cpu_maps_update_done();
-			timed_topology_update(1);
 			rc = device_offline(get_cpu_device(cpu));
 			if (rc)
 				goto out;
@@ -308,7 +310,6 @@ static int dlpar_online_cpu(struct device_node *dn)
 			if (get_hard_smp_processor_id(cpu) != thread)
 				continue;
 			cpu_maps_update_done();
-			timed_topology_update(1);
 			find_and_online_cpu_nid(cpu);
 			rc = device_online(get_cpu_device(cpu));
 			if (rc) {
@@ -745,6 +746,7 @@ static int dlpar_cpu_add_by_count(u32 cpus_to_add)
 	parent = of_find_node_by_path("/cpus");
 	if (!parent) {
 		pr_warn("Could not find CPU root node in device tree\n");
+		kfree(cpu_drcs);
 		return -1;
 	}
 
@@ -783,25 +785,6 @@ static int dlpar_cpu_add_by_count(u32 cpus_to_add)
 	}
 
 	kfree(cpu_drcs);
-	return rc;
-}
-
-int dlpar_cpu_readd(int cpu)
-{
-	struct device_node *dn;
-	struct device *dev;
-	u32 drc_index;
-	int rc;
-
-	dev = get_cpu_device(cpu);
-	dn = dev->of_node;
-
-	rc = of_property_read_u32(dn, "ibm,my-drc-index", &drc_index);
-
-	rc = dlpar_cpu_remove_by_index(drc_index);
-	if (!rc)
-		rc = dlpar_cpu_add(drc_index);
-
 	return rc;
 }
 
@@ -922,7 +905,7 @@ static int __init pseries_cpu_hotplug_init(void)
 		return 0;
 	}
 
-	ppc_md.cpu_die = pseries_mach_cpu_die;
+	smp_ops->cpu_offline_self = pseries_cpu_offline_self;
 	smp_ops->cpu_disable = pseries_cpu_disable;
 	smp_ops->cpu_die = pseries_cpu_die;
 

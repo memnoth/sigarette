@@ -21,10 +21,9 @@ to_vc4_hdmi_encoder(struct drm_encoder *encoder)
 	return container_of(encoder, struct vc4_hdmi_encoder, base.base);
 }
 
-struct drm_display_mode;
-
 struct vc4_hdmi;
 struct vc4_hdmi_register;
+struct vc4_hdmi_connector_state;
 
 enum vc4_hdmi_phy_channel {
 	PHY_LANE_0 = 0,
@@ -34,19 +33,17 @@ enum vc4_hdmi_phy_channel {
 };
 
 struct vc4_hdmi_variant {
-	/* On devices that have multiple, different instances (like
-	 * the BCM2711), which instance is that variant useful for.
-	 */
-	unsigned int id;
+	/* Encoder Type for that controller */
+	enum vc4_encoder_type encoder_type;
 
-	/* Set to true when the audio support is available */
-	bool audio_available;
+	/* ALSA card name */
+	const char *card_name;
+
+	/* Filename to expose the registers in debugfs */
+	const char *debugfs_name;
 
 	/* Maximum pixel clock supported by the controller (in Hz) */
 	unsigned long long max_pixel_clock;
-
-	/* Input clock frequency of CEC block (in Hz) */
-	unsigned long cec_input_clock;
 
 	/* List of the registers available on that variant */
 	const struct vc4_hdmi_register *registers;
@@ -61,6 +58,16 @@ struct vc4_hdmi_variant {
 	 */
 	enum vc4_hdmi_phy_channel phy_lane_mapping[4];
 
+	/* The BCM2711 cannot deal with odd horizontal pixel timings */
+	bool unsupported_odd_h_timings;
+
+	/*
+	 * The BCM2711 CEC/hotplug IRQ controller is shared between the
+	 * two HDMI controllers, and we have a proper irqchip driver for
+	 * it.
+	 */
+	bool external_irq_controller;
+
 	/* Callback to get the resources (memory region, interrupts,
 	 * clocks, etc) for that variant.
 	 */
@@ -74,11 +81,12 @@ struct vc4_hdmi_variant {
 
 	/* Callback to configure the video timings in the HDMI block */
 	void (*set_timings)(struct vc4_hdmi *vc4_hdmi,
+			    struct drm_connector_state *state,
 			    struct drm_display_mode *mode);
 
-	/* Callback to initialize the PHY according to the mode */
+	/* Callback to initialize the PHY according to the connector state */
 	void (*phy_init)(struct vc4_hdmi *vc4_hdmi,
-			 struct drm_display_mode *mode);
+			 struct vc4_hdmi_connector_state *vc4_conn_state);
 
 	/* Callback to disable the PHY */
 	void (*phy_disable)(struct vc4_hdmi *vc4_hdmi);
@@ -89,17 +97,11 @@ struct vc4_hdmi_variant {
 	/* Callback to disable the RNG in the PHY */
 	void (*phy_rng_disable)(struct vc4_hdmi *vc4_hdmi);
 
-	/* Callback to get hsm clock */
-	u32 (*get_hsm_clock)(struct vc4_hdmi *vc4_hdmi);
-
-	/* Callback to get hsm clock */
-	u32 (*calc_hsm_clock)(struct vc4_hdmi *vc4_hdmi, unsigned long pixel_rate);
-
 	/* Callback to get channel map */
 	u32 (*channel_map)(struct vc4_hdmi *vc4_hdmi, u32 channel_mask);
 
-	/* Bitmask for CEC events */
-	u32 cec_mask;
+	/* Enables HDR metadata */
+	bool supports_hdr;
 };
 
 /* HDMI audio information */
@@ -124,13 +126,13 @@ struct vc4_hdmi_audio {
 
 /* General HDMI hardware state. */
 struct vc4_hdmi {
+	struct vc4_hdmi_audio audio;
+
 	struct platform_device *pdev;
 	const struct vc4_hdmi_variant *variant;
 
 	struct vc4_hdmi_encoder encoder;
 	struct drm_connector connector;
-
-	struct vc4_hdmi_audio audio;
 
 	struct i2c_adapter *ddc;
 	void __iomem *hdmicore_regs;
@@ -148,24 +150,41 @@ struct vc4_hdmi {
 	void __iomem *ram_regs;
 	/* VC5 Only */
 	void __iomem *rm_regs;
-	/* VC5 Only */
-	void __iomem *intr2_regs;
 
 	int hpd_gpio;
 	bool hpd_active_low;
+
+	/*
+	 * On some systems (like the RPi4), some modes are in the same
+	 * frequency range than the WiFi channels (1440p@60Hz for
+	 * example). Should we take evasive actions because that system
+	 * has a wifi adapter?
+	 */
+	bool disable_wifi_frequencies;
 
 	struct cec_adapter *cec_adap;
 	struct cec_msg cec_rx_msg;
 	bool cec_tx_ok;
 	bool cec_irq_was_rx;
 
+	struct clk *cec_clock;
 	struct clk *pixel_clock;
 	struct clk *hsm_clock;
+	struct clk *audio_clock;
+	struct clk *pixel_bvb_clock;
 
 	struct reset_control *reset;
 
+	/* Common debugfs regset */
 	struct debugfs_regset32 hdmi_regset;
 	struct debugfs_regset32 hd_regset;
+	/* VC5 debugfs regset */
+	struct debugfs_regset32 cec_regset;
+	struct debugfs_regset32 csc_regset;
+	struct debugfs_regset32 dvp_regset;
+	struct debugfs_regset32 phy_regset;
+	struct debugfs_regset32 ram_regset;
+	struct debugfs_regset32 rm_regset;
 };
 
 static inline struct vc4_hdmi *
@@ -182,14 +201,26 @@ encoder_to_vc4_hdmi(struct drm_encoder *encoder)
 	return container_of(_encoder, struct vc4_hdmi, encoder);
 }
 
+struct vc4_hdmi_connector_state {
+	struct drm_connector_state	base;
+	unsigned long long		pixel_rate;
+};
+
+static inline struct vc4_hdmi_connector_state *
+conn_state_to_vc4_hdmi_conn_state(struct drm_connector_state *conn_state)
+{
+	return container_of(conn_state, struct vc4_hdmi_connector_state, base);
+}
+
 void vc4_hdmi_phy_init(struct vc4_hdmi *vc4_hdmi,
-		       struct drm_display_mode *mode);
+		       struct vc4_hdmi_connector_state *vc4_conn_state);
 void vc4_hdmi_phy_disable(struct vc4_hdmi *vc4_hdmi);
 void vc4_hdmi_phy_rng_enable(struct vc4_hdmi *vc4_hdmi);
 void vc4_hdmi_phy_rng_disable(struct vc4_hdmi *vc4_hdmi);
 
 void vc5_hdmi_phy_init(struct vc4_hdmi *vc4_hdmi,
-		       struct drm_display_mode *mode);
+		       struct vc4_hdmi_connector_state *vc4_conn_state);
+void vc5_hdmi_phy_disable(struct vc4_hdmi *vc4_hdmi);
 void vc5_hdmi_phy_rng_enable(struct vc4_hdmi *vc4_hdmi);
 void vc5_hdmi_phy_rng_disable(struct vc4_hdmi *vc4_hdmi);
 

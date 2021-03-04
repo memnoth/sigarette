@@ -123,7 +123,7 @@ static int __ib_process_cq(struct ib_cq *cq, int budget, struct ib_wc *wcs,
 }
 
 /**
- * ib_process_direct_cq - process a CQ in caller context
+ * ib_process_cq_direct - process a CQ in caller context
  * @cq:		CQ to process
  * @budget:	number of CQEs to poll for
  *
@@ -197,7 +197,7 @@ static void ib_cq_completion_workqueue(struct ib_cq *cq, void *private)
 }
 
 /**
- * __ib_alloc_cq        allocate a completion queue
+ * __ib_alloc_cq - allocate a completion queue
  * @dev:		device to allocate the CQ for
  * @private:		driver private data, accessible from cq->cq_context
  * @nr_cqe:		number of CQEs to allocate
@@ -235,14 +235,12 @@ struct ib_cq *__ib_alloc_cq(struct ib_device *dev, void *private, int nr_cqe,
 	if (!cq->wc)
 		goto out_free_cq;
 
-	cq->res.type = RDMA_RESTRACK_CQ;
-	rdma_restrack_set_task(&cq->res, caller);
+	rdma_restrack_new(&cq->res, RDMA_RESTRACK_CQ);
+	rdma_restrack_set_name(&cq->res, caller);
 
 	ret = dev->ops.create_cq(cq, &cq_attr, NULL);
 	if (ret)
 		goto out_free_wc;
-
-	rdma_restrack_kadd(&cq->res);
 
 	rdma_dim_init(cq);
 
@@ -269,14 +267,15 @@ struct ib_cq *__ib_alloc_cq(struct ib_device *dev, void *private, int nr_cqe,
 		goto out_destroy_cq;
 	}
 
+	rdma_restrack_add(&cq->res);
 	trace_cq_alloc(cq, nr_cqe, comp_vector, poll_ctx);
 	return cq;
 
 out_destroy_cq:
 	rdma_dim_destroy(cq);
-	rdma_restrack_del(&cq->res);
 	cq->device->ops.destroy_cq(cq, NULL);
 out_free_wc:
+	rdma_restrack_put(&cq->res);
 	kfree(cq->wc);
 out_free_cq:
 	kfree(cq);
@@ -350,16 +349,7 @@ void ib_free_cq(struct ib_cq *cq)
 }
 EXPORT_SYMBOL(ib_free_cq);
 
-void ib_cq_pool_init(struct ib_device *dev)
-{
-	unsigned int i;
-
-	spin_lock_init(&dev->cq_pools_lock);
-	for (i = 0; i < ARRAY_SIZE(dev->cq_pools); i++)
-		INIT_LIST_HEAD(&dev->cq_pools[i]);
-}
-
-void ib_cq_pool_destroy(struct ib_device *dev)
+void ib_cq_pool_cleanup(struct ib_device *dev)
 {
 	struct ib_cq *cq, *n;
 	unsigned int i;
@@ -368,6 +358,7 @@ void ib_cq_pool_destroy(struct ib_device *dev)
 		list_for_each_entry_safe(cq, n, &dev->cq_pools[i],
 					 pool_entry) {
 			WARN_ON(cq->cqe_used);
+			list_del(&cq->pool_entry);
 			cq->shared = false;
 			ib_free_cq(cq);
 		}

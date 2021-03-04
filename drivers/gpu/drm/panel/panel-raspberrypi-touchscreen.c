@@ -209,7 +209,6 @@ static const struct drm_display_mode rpi_touchscreen_modes[] = {
 		.vsync_start = 480 + 7,
 		.vsync_end = 480 + 7 + 2,
 		.vtotal = 480 + 7 + 2 + 21,
-		.vrefresh = 60,
 	},
 };
 
@@ -220,7 +219,35 @@ static struct rpi_touchscreen *panel_to_ts(struct drm_panel *panel)
 
 static int rpi_touchscreen_i2c_read(struct rpi_touchscreen *ts, u8 reg)
 {
-	return i2c_smbus_read_byte_data(ts->i2c, reg);
+	struct i2c_client *client = ts->i2c;
+	struct i2c_msg msgs[1];
+	u8 addr_buf[1] = { reg };
+	u8 data_buf[1] = { 0, };
+	int ret;
+
+	/* Write register address */
+	msgs[0].addr = client->addr;
+	msgs[0].flags = 0;
+	msgs[0].len = ARRAY_SIZE(addr_buf);
+	msgs[0].buf = addr_buf;
+
+	ret = i2c_transfer(client->adapter, msgs, ARRAY_SIZE(msgs));
+	if (ret != ARRAY_SIZE(msgs))
+		return -EIO;
+
+	usleep_range(100, 300);
+
+	/* Read data from register */
+	msgs[0].addr = client->addr;
+	msgs[0].flags = I2C_M_RD;
+	msgs[0].len = 1;
+	msgs[0].buf = data_buf;
+
+	ret = i2c_transfer(client->adapter, msgs, ARRAY_SIZE(msgs));
+	if (ret != ARRAY_SIZE(msgs))
+		return -EIO;
+
+	return data_buf[0];
 }
 
 static void rpi_touchscreen_i2c_write(struct rpi_touchscreen *ts,
@@ -272,6 +299,7 @@ static int rpi_touchscreen_enable(struct drm_panel *panel)
 	int i;
 
 	rpi_touchscreen_i2c_write(ts, REG_POWERON, 1);
+	usleep_range(20000, 25000);
 	/* Wait for nPWRDWN to go low to indicate poweron is done. */
 	for (i = 0; i < 100; i++) {
 		if (rpi_touchscreen_i2c_read(ts, REG_PORTB) & 1)
@@ -322,7 +350,8 @@ static int rpi_touchscreen_get_modes(struct drm_panel *panel,
 		mode = drm_mode_duplicate(connector->dev, m);
 		if (!mode) {
 			dev_err(panel->dev, "failed to add mode %ux%u@%u\n",
-				m->hdisplay, m->vdisplay, m->vrefresh);
+				m->hdisplay, m->vdisplay,
+				drm_mode_vrefresh(m));
 			continue;
 		}
 
@@ -361,7 +390,7 @@ static int rpi_touchscreen_probe(struct i2c_client *i2c,
 	struct rpi_touchscreen *ts;
 	struct device_node *endpoint, *dsi_host_node;
 	struct mipi_dsi_host *host;
-	int ret, ver;
+	int ver;
 	struct mipi_dsi_device_info info = {
 		.type = RPI_DSI_DRIVER_NAME,
 		.channel = 0,
@@ -429,9 +458,7 @@ static int rpi_touchscreen_probe(struct i2c_client *i2c,
 	/* This appears last, as it's what will unblock the DSI host
 	 * driver's component bind function.
 	 */
-	ret = drm_panel_add(&ts->base);
-	if (ret)
-		return ret;
+	drm_panel_add(&ts->base);
 
 	return 0;
 

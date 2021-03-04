@@ -4,7 +4,7 @@
  * A v4l2-mem2mem device that wraps the video codec MMAL component.
  *
  * Copyright 2018 Raspberry Pi (Trading) Ltd.
- * Author: Dave Stevenson (dave.stevenson@raspberrypi.org)
+ * Author: Dave Stevenson (dave.stevenson@raspberrypi.com)
  *
  * Loosely based on the vim2m virtual driver by Pawel Osciak
  * Copyright (c) 2009-2010 Samsung Electronics Co., Ltd.
@@ -61,7 +61,7 @@ MODULE_PARM_DESC(isp_video_nr, "isp video device number");
 /*
  * Workaround for GStreamer v4l2convert component not considering Bayer formats
  * as raw, and therefore not considering a V4L2 device that supports them as
- * as a suitable candidate.
+ * a suitable candidate.
  */
 static bool disable_bayer;
 module_param(disable_bayer, bool, 0644);
@@ -207,7 +207,7 @@ static const struct bcm2835_codec_fmt supported_formats[] = {
 		.mmal_fmt		= MMAL_ENCODING_BGR24,
 		.size_multiplier_x2	= 2,
 	}, {
-		.fourcc			= V4L2_PIX_FMT_BGRX32,
+		.fourcc			= V4L2_PIX_FMT_BGR32,
 		.depth			= 32,
 		.bytesperline_align	= 32,
 		.flags			= 0,
@@ -381,6 +381,106 @@ static const struct bcm2835_codec_fmt supported_formats[] = {
 		.size_multiplier_x2	= 2,
 		.is_bayer		= true,
 	}, {
+		/* Bayer formats unpacked to 16bpp */
+		/* 10 bit */
+		.fourcc			= V4L2_PIX_FMT_SRGGB10,
+		.depth			= 16,
+		.bytesperline_align	= 32,
+		.flags			= 0,
+		.mmal_fmt		= MMAL_ENCODING_BAYER_SRGGB10,
+		.size_multiplier_x2	= 2,
+		.is_bayer		= true,
+	}, {
+		.fourcc			= V4L2_PIX_FMT_SBGGR10,
+		.depth			= 16,
+		.bytesperline_align	= 32,
+		.flags			= 0,
+		.mmal_fmt		= MMAL_ENCODING_BAYER_SBGGR10,
+		.size_multiplier_x2	= 2,
+		.is_bayer		= true,
+	}, {
+		.fourcc			= V4L2_PIX_FMT_SGRBG10,
+		.depth			= 16,
+		.bytesperline_align	= 32,
+		.flags			= 0,
+		.mmal_fmt		= MMAL_ENCODING_BAYER_SGRBG10,
+		.size_multiplier_x2	= 2,
+		.is_bayer		= true,
+	}, {
+		.fourcc			= V4L2_PIX_FMT_SGBRG10,
+		.depth			= 16,
+		.bytesperline_align	= 32,
+		.flags			= 0,
+		.mmal_fmt		= MMAL_ENCODING_BAYER_SGBRG10,
+		.size_multiplier_x2	= 2,
+		.is_bayer		= true,
+	}, {
+		/* 12 bit */
+		.fourcc			= V4L2_PIX_FMT_SRGGB12,
+		.depth			= 16,
+		.bytesperline_align	= 32,
+		.flags			= 0,
+		.mmal_fmt		= MMAL_ENCODING_BAYER_SRGGB12,
+		.size_multiplier_x2	= 2,
+		.is_bayer		= true,
+	}, {
+		.fourcc			= V4L2_PIX_FMT_SBGGR12,
+		.depth			= 16,
+		.bytesperline_align	= 32,
+		.flags			= 0,
+		.mmal_fmt		= MMAL_ENCODING_BAYER_SBGGR12,
+		.size_multiplier_x2	= 2,
+		.is_bayer		= true,
+	}, {
+		.fourcc			= V4L2_PIX_FMT_SGRBG12,
+		.depth			= 16,
+		.bytesperline_align	= 32,
+		.flags			= 0,
+		.mmal_fmt		= MMAL_ENCODING_BAYER_SGRBG12,
+		.size_multiplier_x2	= 2,
+		.is_bayer		= true,
+	}, {
+		.fourcc			= V4L2_PIX_FMT_SGBRG12,
+		.depth			= 16,
+		.bytesperline_align	= 32,
+		.flags			= 0,
+		.mmal_fmt		= MMAL_ENCODING_BAYER_SGBRG12,
+		.size_multiplier_x2	= 2,
+		.is_bayer		= true,
+	}, {
+		/* 14 bit */
+		.fourcc			= V4L2_PIX_FMT_SRGGB14,
+		.depth			= 16,
+		.bytesperline_align	= 32,
+		.flags			= 0,
+		.mmal_fmt		= MMAL_ENCODING_BAYER_SRGGB14,
+		.size_multiplier_x2	= 2,
+		.is_bayer		= true,
+	}, {
+		.fourcc			= V4L2_PIX_FMT_SBGGR14,
+		.depth			= 16,
+		.bytesperline_align	= 32,
+		.flags			= 0,
+		.mmal_fmt		= MMAL_ENCODING_BAYER_SBGGR14,
+		.size_multiplier_x2	= 2,
+		.is_bayer		= true,
+	}, {
+		.fourcc			= V4L2_PIX_FMT_SGRBG14,
+		.depth			= 16,
+		.bytesperline_align	= 32,
+		.flags			= 0,
+		.mmal_fmt		= MMAL_ENCODING_BAYER_SGRBG14,
+		.size_multiplier_x2	= 2,
+		.is_bayer		= true,
+	}, {
+		.fourcc			= V4L2_PIX_FMT_SGBRG14,
+		.depth			= 16,
+		.bytesperline_align	= 32,
+		.flags			= 0,
+		.mmal_fmt		= MMAL_ENCODING_BAYER_SGBRG14,
+		.size_multiplier_x2	= 2,
+		.is_bayer		= true,
+	}, {
 		/* Monochrome MIPI formats */
 		/* 8 bit */
 		.fourcc			= V4L2_PIX_FMT_GREY,
@@ -420,6 +520,30 @@ static const struct bcm2835_codec_fmt supported_formats[] = {
 		.bytesperline_align	= 32,
 		.flags			= 0,
 		.mmal_fmt		= MMAL_ENCODING_Y16,
+		.size_multiplier_x2	= 2,
+	}, {
+		/* 10 bit as 16bpp */
+		.fourcc			= V4L2_PIX_FMT_Y10,
+		.depth			= 16,
+		.bytesperline_align	= 32,
+		.flags			= 0,
+		.mmal_fmt		= MMAL_ENCODING_Y10,
+		.size_multiplier_x2	= 2,
+	}, {
+		/* 12 bit as 16bpp */
+		.fourcc			= V4L2_PIX_FMT_Y12,
+		.depth			= 16,
+		.bytesperline_align	= 32,
+		.flags			= 0,
+		.mmal_fmt		= MMAL_ENCODING_Y12,
+		.size_multiplier_x2	= 2,
+	}, {
+		/* 14 bit as 16bpp */
+		.fourcc			= V4L2_PIX_FMT_Y14,
+		.depth			= 16,
+		.bytesperline_align	= 32,
+		.flags			= 0,
+		.mmal_fmt		= MMAL_ENCODING_Y14,
 		.size_multiplier_x2	= 2,
 	}, {
 		/* Compressed formats */
@@ -908,7 +1032,7 @@ static void op_buffer_cb(struct vchiq_mmal_instance *instance,
 		/* stream ended, or buffer being returned during disable. */
 		v4l2_dbg(2, debug, &ctx->dev->v4l2_dev, "%s: Empty buffer - flags %04x",
 			 __func__, mmal_buf->mmal_flags);
-		if (!mmal_buf->mmal_flags & MMAL_BUFFER_HEADER_FLAG_EOS) {
+		if (!(mmal_buf->mmal_flags & MMAL_BUFFER_HEADER_FLAG_EOS)) {
 			vb2_buffer_done(&vb2->vb2_buf, VB2_BUF_STATE_ERROR);
 			if (!port->enabled)
 				complete(&ctx->frame_cmplt);
@@ -947,6 +1071,7 @@ static void vb2_to_mmal_buffer(struct m2m_mmal_buffer *buf,
 			       struct vb2_v4l2_buffer *vb2)
 {
 	u64 pts;
+
 	buf->mmal.mmal_flags = 0;
 	if (vb2->flags & V4L2_BUF_FLAG_KEYFRAME)
 		buf->mmal.mmal_flags |= MMAL_BUFFER_HEADER_FLAG_KEYFRAME;
@@ -1134,7 +1259,7 @@ static int vidioc_try_fmt(struct bcm2835_codec_ctx *ctx, struct v4l2_format *f,
 	if (f->fmt.pix_mp.height > MAX_H)
 		f->fmt.pix_mp.height = MAX_H;
 
-	if (!fmt->flags & V4L2_FMT_FLAG_COMPRESSED) {
+	if (!(fmt->flags & V4L2_FMT_FLAG_COMPRESSED)) {
 		/* Only clip min w/h on capture. Treat 0x0 as unknown. */
 		if (f->fmt.pix_mp.width < MIN_W)
 			f->fmt.pix_mp.width = MIN_W;
@@ -1208,9 +1333,9 @@ static int vidioc_s_fmt(struct bcm2835_codec_ctx *ctx, struct v4l2_format *f,
 	bool update_capture_port = false;
 	int ret;
 
-	v4l2_dbg(1, debug, &ctx->dev->v4l2_dev,	"Setting format for type %d, wxh: %dx%d, fmt: " V4L2_FOURCC_CONV ", size %u\n",
+	v4l2_dbg(1, debug, &ctx->dev->v4l2_dev,	"Setting format for type %d, wxh: %dx%d, fmt: %08x, size %u\n",
 		 f->type, f->fmt.pix_mp.width, f->fmt.pix_mp.height,
-		 V4L2_FOURCC_CONV_ARGS(f->fmt.pix_mp.pixelformat),
+		 f->fmt.pix_mp.pixelformat,
 		 f->fmt.pix_mp.plane_fmt[0].sizeimage);
 
 	vq = v4l2_m2m_get_vq(ctx->fh.m2m_ctx, f->type);
@@ -1691,6 +1816,17 @@ static int bcm2835_codec_s_ctrl(struct v4l2_ctrl *ctrl)
 						    sizeof(ctrl->val));
 		break;
 
+	case V4L2_CID_MPEG_VIDEO_HEADER_MODE:
+		if (!ctx->component)
+			break;
+
+		ret = vchiq_mmal_port_parameter_set(ctx->dev->instance,
+						    &ctx->component->output[0],
+						    MMAL_PARAMETER_VIDEO_ENCODE_HEADERS_WITH_FRAME,
+						    &ctrl->val,
+						    sizeof(ctrl->val));
+		break;
+
 	case V4L2_CID_MPEG_VIDEO_H264_I_PERIOD:
 		if (!ctx->component)
 			break;
@@ -1768,6 +1904,7 @@ static int vidioc_decoder_cmd(struct file *file, void *priv,
 {
 	struct bcm2835_codec_ctx *ctx = file2ctx(file);
 	struct bcm2835_codec_q_data *q_data = &ctx->q_data[V4L2_M2M_SRC];
+	struct vb2_queue *dst_vq;
 	int ret;
 
 	v4l2_dbg(2, debug, &ctx->dev->v4l2_dev, "%s, cmd %u", __func__,
@@ -1803,7 +1940,9 @@ static int vidioc_decoder_cmd(struct file *file, void *priv,
 		break;
 
 	case V4L2_DEC_CMD_START:
-		/* Do we need to do anything here? */
+		dst_vq = v4l2_m2m_get_vq(ctx->fh.m2m_ctx,
+					 V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE);
+		vb2_clear_last_buffer_dequeued(dst_vq);
 		break;
 
 	default:
@@ -1962,6 +2101,7 @@ static int bcm2835_codec_set_ctrls(struct bcm2835_codec_ctx *ctx)
 	const u32 control_ids[] = {
 		V4L2_CID_MPEG_VIDEO_BITRATE_MODE,
 		V4L2_CID_MPEG_VIDEO_REPEAT_SEQ_HEADER,
+		V4L2_CID_MPEG_VIDEO_HEADER_MODE,
 		V4L2_CID_MPEG_VIDEO_H264_I_PERIOD,
 		V4L2_CID_MPEG_VIDEO_H264_LEVEL,
 		V4L2_CID_MPEG_VIDEO_H264_PROFILE,
@@ -1999,6 +2139,19 @@ static int bcm2835_codec_create_component(struct bcm2835_codec_ctx *ctx)
 	vchiq_mmal_port_parameter_set(dev->instance, &ctx->component->output[0],
 				      MMAL_PARAMETER_ZERO_COPY, &enable,
 				      sizeof(enable));
+
+	if (dev->role == DECODE) {
+		/*
+		 * Disable firmware option that ensures decoded timestamps
+		 * always increase.
+		 */
+		enable = 0;
+		vchiq_mmal_port_parameter_set(dev->instance,
+					      &ctx->component->output[0],
+					      MMAL_PARAMETER_VIDEO_VALIDATE_TIMESTAMPS,
+					      &enable,
+					      sizeof(enable));
+	}
 
 	setup_mmal_port_format(ctx, &ctx->q_data[V4L2_M2M_SRC],
 			       &ctx->component->input[0]);
@@ -2039,11 +2192,10 @@ static int bcm2835_codec_create_component(struct bcm2835_codec_ctx *ctx)
 		/* Enable SPS Timing header so framerate information is encoded
 		 * in the H264 header.
 		 */
-		vchiq_mmal_port_parameter_set(
-					ctx->dev->instance,
-					&ctx->component->output[0],
-					MMAL_PARAMETER_VIDEO_ENCODE_SPS_TIMING,
-					&param, sizeof(param));
+		vchiq_mmal_port_parameter_set(ctx->dev->instance,
+					      &ctx->component->output[0],
+					      MMAL_PARAMETER_VIDEO_ENCODE_SPS_TIMING,
+					      &param, sizeof(param));
 
 		/* Enable inserting headers into the first frame */
 		vchiq_mmal_port_parameter_set(ctx->dev->instance,
@@ -2379,7 +2531,6 @@ static void bcm2835_codec_stop_streaming(struct vb2_queue *q)
 		}
 	}
 
-
 	/* If both ports disabled, then disable the component */
 	if (ctx->component_enabled &&
 	    !ctx->component->input[0].enabled &&
@@ -2503,7 +2654,7 @@ static int bcm2835_codec_open(struct file *file)
 	hdl = &ctx->hdl;
 	if (dev->role == ENCODE) {
 		/* Encode controls */
-		v4l2_ctrl_handler_init(hdl, 7);
+		v4l2_ctrl_handler_init(hdl, 9);
 
 		v4l2_ctrl_new_std_menu(hdl, &bcm2835_codec_ctrl_ops,
 				       V4L2_CID_MPEG_VIDEO_BITRATE_MODE,
@@ -2513,6 +2664,10 @@ static int bcm2835_codec_open(struct file *file)
 				  V4L2_CID_MPEG_VIDEO_BITRATE,
 				  25 * 1000, 25 * 1000 * 1000,
 				  25 * 1000, 10 * 1000 * 1000);
+		v4l2_ctrl_new_std_menu(hdl, &bcm2835_codec_ctrl_ops,
+				       V4L2_CID_MPEG_VIDEO_HEADER_MODE,
+				       V4L2_MPEG_VIDEO_HEADER_MODE_JOINED_WITH_1ST_FRAME,
+				       0, V4L2_MPEG_VIDEO_HEADER_MODE_JOINED_WITH_1ST_FRAME);
 		v4l2_ctrl_new_std(hdl, &bcm2835_codec_ctrl_ops,
 				  V4L2_CID_MPEG_VIDEO_REPEAT_SEQ_HEADER,
 				  0, 1,
@@ -2650,10 +2805,10 @@ static const struct v4l2_m2m_ops m2m_ops = {
 
 /* Size of the array to provide to the VPU when asking for the list of supported
  * formats.
- * The ISP component currently advertises 44 input formats, so add a small
+ * The ISP component currently advertises 62 input formats, so add a small
  * overhead on that.
  */
-#define MAX_SUPPORTED_ENCODINGS 50
+#define MAX_SUPPORTED_ENCODINGS 70
 
 /* Populate dev->supported_fmts with the formats supported by those ports. */
 static int bcm2835_codec_get_supported_fmts(struct bcm2835_codec_dev *dev)
@@ -2681,8 +2836,10 @@ static int bcm2835_codec_get_supported_fmts(struct bcm2835_codec_dev *dev)
 
 	if (ret) {
 		if (ret == MMAL_MSG_STATUS_ENOSPC) {
-			v4l2_err(&dev->v4l2_dev, "%s: port has more encoding than we provided space for. Some are dropped.\n",
-				 __func__);
+			v4l2_err(&dev->v4l2_dev,
+				 "%s: port has more encodings than we provided space for. Some are dropped (%u vs %u).\n",
+				 __func__, param_size / sizeof(u32),
+				 MAX_SUPPORTED_ENCODINGS);
 			num_encodings = MAX_SUPPORTED_ENCODINGS;
 		} else {
 			v4l2_err(&dev->v4l2_dev, "%s: get_param ret %u.\n",
@@ -2725,8 +2882,10 @@ static int bcm2835_codec_get_supported_fmts(struct bcm2835_codec_dev *dev)
 
 	if (ret) {
 		if (ret == MMAL_MSG_STATUS_ENOSPC) {
-			v4l2_err(&dev->v4l2_dev, "%s: port has more encoding than we provided space for. Some are dropped.\n",
-				 __func__);
+			v4l2_err(&dev->v4l2_dev,
+				 "%s: port has more encodings than we provided space for. Some are dropped (%u vs %u).\n",
+				 __func__, param_size / sizeof(u32),
+				 MAX_SUPPORTED_ENCODINGS);
 			num_encodings = MAX_SUPPORTED_ENCODINGS;
 		} else {
 			ret = -EINVAL;
@@ -2979,7 +3138,7 @@ static struct platform_driver bcm2835_v4l2_codec_driver = {
 module_platform_driver(bcm2835_v4l2_codec_driver);
 
 MODULE_DESCRIPTION("BCM2835 codec V4L2 driver");
-MODULE_AUTHOR("Dave Stevenson, <dave.stevenson@raspberrypi.org>");
+MODULE_AUTHOR("Dave Stevenson, <dave.stevenson@raspberrypi.com>");
 MODULE_LICENSE("GPL");
 MODULE_VERSION("0.0.1");
 MODULE_ALIAS("platform:bcm2835-codec");

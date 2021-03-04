@@ -627,9 +627,10 @@ static struct vfio_device *vfio_group_get_device(struct vfio_group *group,
  * that error notification via MSI can be affected for platforms that handle
  * MSI within the same IOVA space as DMA.
  */
-static const char * const vfio_driver_whitelist[] = { "pci-stub" };
+static const char * const vfio_driver_allowed[] = { "pci-stub" };
 
-static bool vfio_dev_whitelisted(struct device *dev, struct device_driver *drv)
+static bool vfio_dev_driver_allowed(struct device *dev,
+				    struct device_driver *drv)
 {
 	if (dev_is_pci(dev)) {
 		struct pci_dev *pdev = to_pci_dev(dev);
@@ -638,8 +639,8 @@ static bool vfio_dev_whitelisted(struct device *dev, struct device_driver *drv)
 			return true;
 	}
 
-	return match_string(vfio_driver_whitelist,
-			    ARRAY_SIZE(vfio_driver_whitelist),
+	return match_string(vfio_driver_allowed,
+			    ARRAY_SIZE(vfio_driver_allowed),
 			    drv->name) >= 0;
 }
 
@@ -648,7 +649,7 @@ static bool vfio_dev_whitelisted(struct device *dev, struct device_driver *drv)
  * one of the following states:
  *  - driver-less
  *  - bound to a vfio driver
- *  - bound to a whitelisted driver
+ *  - bound to an otherwise allowed driver
  *  - a PCI interconnect device
  *
  * We use two methods to determine whether a device is bound to a vfio
@@ -674,7 +675,7 @@ static int vfio_dev_viable(struct device *dev, void *data)
 	}
 	mutex_unlock(&group->unbound_lock);
 
-	if (!ret || !drv || vfio_dev_whitelisted(dev, drv))
+	if (!ret || !drv || vfio_dev_driver_allowed(dev, drv))
 		return 0;
 
 	device = vfio_group_get_device(group, dev);
@@ -2350,6 +2351,24 @@ int vfio_unregister_notifier(struct device *dev, enum vfio_notify_type type,
 	return ret;
 }
 EXPORT_SYMBOL(vfio_unregister_notifier);
+
+struct iommu_domain *vfio_group_iommu_domain(struct vfio_group *group)
+{
+	struct vfio_container *container;
+	struct vfio_iommu_driver *driver;
+
+	if (!group)
+		return ERR_PTR(-EINVAL);
+
+	container = group->container;
+	driver = container->iommu_driver;
+	if (likely(driver && driver->ops->group_iommu_domain))
+		return driver->ops->group_iommu_domain(container->iommu_data,
+						       group->iommu_group);
+
+	return ERR_PTR(-ENOTTY);
+}
+EXPORT_SYMBOL_GPL(vfio_group_iommu_domain);
 
 /**
  * Module/class support

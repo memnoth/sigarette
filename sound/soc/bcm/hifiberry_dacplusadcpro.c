@@ -190,6 +190,7 @@ static void snd_rpi_hifiberry_dacplusadcpro_select_clk(
 				PCM512x_GPIO_CONTROL_1, 0x24, 0x04);
 		break;
 	}
+	usleep_range(2000, 2100);
 }
 
 static void snd_rpi_hifiberry_dacplusadcpro_clk_gpio(struct snd_soc_component *component)
@@ -203,15 +204,8 @@ static bool snd_rpi_hifiberry_dacplusadcpro_is_sclk(struct snd_soc_component *co
 {
 	unsigned int sck;
 
-	snd_soc_component_read(component, PCM512x_RATE_DET_4, &sck);
+	sck = snd_soc_component_read(component, PCM512x_RATE_DET_4);
 	return (!(sck & 0x40));
-}
-
-static bool snd_rpi_hifiberry_dacplusadcpro_is_sclk_sleep(
-	struct snd_soc_component *component)
-{
-	msleep(2);
-	return snd_rpi_hifiberry_dacplusadcpro_is_sclk(component);
 }
 
 static bool snd_rpi_hifiberry_dacplusadcpro_is_pro_card(struct snd_soc_component *component)
@@ -221,13 +215,13 @@ static bool snd_rpi_hifiberry_dacplusadcpro_is_pro_card(struct snd_soc_component
 	snd_rpi_hifiberry_dacplusadcpro_clk_gpio(component);
 
 	snd_rpi_hifiberry_dacplusadcpro_select_clk(component, HIFIBERRY_DACPRO_CLK44EN);
-	isClk44EN = snd_rpi_hifiberry_dacplusadcpro_is_sclk_sleep(component);
+	isClk44EN = snd_rpi_hifiberry_dacplusadcpro_is_sclk(component);
 
 	snd_rpi_hifiberry_dacplusadcpro_select_clk(component, HIFIBERRY_DACPRO_NOCLOCK);
-	isNoClk = snd_rpi_hifiberry_dacplusadcpro_is_sclk_sleep(component);
+	isNoClk = snd_rpi_hifiberry_dacplusadcpro_is_sclk(component);
 
 	snd_rpi_hifiberry_dacplusadcpro_select_clk(component, HIFIBERRY_DACPRO_CLK48EN);
-	isClk48En = snd_rpi_hifiberry_dacplusadcpro_is_sclk_sleep(component);
+	isClk48En = snd_rpi_hifiberry_dacplusadcpro_is_sclk(component);
 
 	return (isClk44EN && isClk48En && !isNoClk);
 }

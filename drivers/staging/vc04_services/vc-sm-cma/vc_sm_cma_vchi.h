@@ -13,7 +13,7 @@
 #ifndef __VC_SM_CMA_VCHI_H__INCLUDED__
 #define __VC_SM_CMA_VCHI_H__INCLUDED__
 
-#include "interface/vchi/vchi.h"
+#include <linux/raspberrypi/vchiq.h>
 
 #include "vc_sm_defs.h"
 
@@ -28,7 +28,7 @@ typedef void (*vpu_event_cb)(struct sm_instance *instance,
 /*
  * Initialize the shared memory service, opens up vchi connection to talk to it.
  */
-struct sm_instance *vc_sm_cma_vchi_init(struct vchi_instance_handle * vchi_instance,
+struct sm_instance *vc_sm_cma_vchi_init(struct vchiq_instance *vchi_instance,
 					unsigned int num_connections,
 					vpu_event_cb vpu_event);
 

@@ -233,6 +233,9 @@ static bool renesas_sdhi_internal_dmac_complete(struct tmio_mmc_host *host)
 {
 	enum dma_data_direction dir;
 
+	if (!host->dma_on)
+		return false;
+
 	if (!host->data)
 		return false;
 
@@ -246,6 +249,8 @@ static bool renesas_sdhi_internal_dmac_complete(struct tmio_mmc_host *host)
 
 	if (dir == DMA_FROM_DEVICE)
 		clear_bit(SDHI_INTERNAL_DMAC_RX_IN_USE, &global_flags);
+
+	host->dma_on = false;
 
 	return true;
 }
@@ -261,6 +266,12 @@ static void renesas_sdhi_internal_dmac_complete_tasklet_fn(unsigned long arg)
 	tmio_mmc_do_data_irq(host);
 out:
 	spin_unlock_irq(&host->lock);
+}
+
+static void renesas_sdhi_internal_dmac_end_dma(struct tmio_mmc_host *host)
+{
+	if (host->data)
+		renesas_sdhi_internal_dmac_complete(host);
 }
 
 static void
@@ -300,6 +311,7 @@ static const struct tmio_mmc_dma_ops renesas_sdhi_internal_dmac_dma_ops = {
 	.release = renesas_sdhi_internal_dmac_release_dma,
 	.abort = renesas_sdhi_internal_dmac_abort_dma,
 	.dataend = renesas_sdhi_internal_dmac_dataend_dma,
+	.end = renesas_sdhi_internal_dmac_end_dma,
 };
 
 /*
@@ -324,10 +336,6 @@ static int renesas_sdhi_internal_dmac_probe(struct platform_device *pdev)
 	if (soc)
 		global_flags |= (unsigned long)soc->data;
 
-	dev->dma_parms = devm_kzalloc(dev, sizeof(*dev->dma_parms), GFP_KERNEL);
-	if (!dev->dma_parms)
-		return -ENOMEM;
-
 	/* value is max of SD_SECCNT. Confirmed by HW engineers */
 	dma_set_max_seg_size(dev, 0xffffffff);
 
@@ -345,6 +353,7 @@ static const struct dev_pm_ops renesas_sdhi_internal_dmac_dev_pm_ops = {
 static struct platform_driver renesas_internal_dmac_sdhi_driver = {
 	.driver		= {
 		.name	= "renesas_sdhi_internal_dmac",
+		.probe_type = PROBE_PREFER_ASYNCHRONOUS,
 		.pm	= &renesas_sdhi_internal_dmac_dev_pm_ops,
 		.of_match_table = renesas_sdhi_internal_dmac_of_match,
 	},

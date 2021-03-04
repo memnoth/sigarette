@@ -373,6 +373,10 @@ static irqreturn_t bcm2835_i2c_isr(int this_irq, void *data)
 	u32 val, err;
 
 	val = bcm2835_i2c_readl(i2c_dev, BCM2835_I2C_S);
+	bcm2835_i2c_writel(i2c_dev, BCM2835_I2C_S,
+			   BCM2835_I2C_S_CLKT |
+			   BCM2835_I2C_S_ERR |
+			   BCM2835_I2C_S_DONE);
 	bcm2835_debug_add(i2c_dev, val);
 
 	err = val & (BCM2835_I2C_S_CLKT | BCM2835_I2C_S_ERR);
@@ -382,6 +386,9 @@ static irqreturn_t bcm2835_i2c_isr(int this_irq, void *data)
 	}
 
 	if (val & BCM2835_I2C_S_DONE) {
+		if (val & BCM2835_I2C_S_TA)
+			return IRQ_HANDLED;
+
 		if (!i2c_dev->curr_msg) {
 			dev_err(i2c_dev->dev, "Got unexpected interrupt (from firmware?)\n");
 		} else if (i2c_dev->curr_msg->flags & I2C_M_RD) {
@@ -389,7 +396,10 @@ static irqreturn_t bcm2835_i2c_isr(int this_irq, void *data)
 			val = bcm2835_i2c_readl(i2c_dev, BCM2835_I2C_S);
 		}
 
-		if ((val & BCM2835_I2C_S_RXD) || i2c_dev->msg_buf_remaining)
+		if (i2c_dev->msg_buf_remaining)
+			return IRQ_HANDLED;
+
+		if (val & BCM2835_I2C_S_RXD)
 			i2c_dev->msg_err = BCM2835_I2C_S_LEN;
 		else
 			i2c_dev->msg_err = 0;
@@ -426,8 +436,6 @@ static irqreturn_t bcm2835_i2c_isr(int this_irq, void *data)
 
 complete:
 	bcm2835_i2c_writel(i2c_dev, BCM2835_I2C_C, BCM2835_I2C_C_CLEAR);
-	bcm2835_i2c_writel(i2c_dev, BCM2835_I2C_S, BCM2835_I2C_S_CLKT |
-			   BCM2835_I2C_S_ERR | BCM2835_I2C_S_DONE);
 	complete(&i2c_dev->completion);
 
 	return IRQ_HANDLED;
@@ -501,7 +509,7 @@ static const struct i2c_algorithm bcm2835_i2c_algo = {
 
 /*
  * The BCM2835 was reported to have problems with clock stretching:
- * http://www.advamation.com/knowhow/raspberrypi/rpi-i2c-bug.html
+ * https://www.advamation.com/knowhow/raspberrypi/rpi-i2c-bug.html
  * https://www.raspberrypi.org/forums/viewtopic.php?p=146272
  */
 static const struct i2c_adapter_quirks bcm2835_i2c_quirks = {
@@ -530,11 +538,9 @@ static int bcm2835_i2c_probe(struct platform_device *pdev)
 		return PTR_ERR(i2c_dev->regs);
 
 	mclk = devm_clk_get(&pdev->dev, NULL);
-	if (IS_ERR(mclk)) {
-		if (PTR_ERR(mclk) != -EPROBE_DEFER)
-			dev_err(&pdev->dev, "Could not get clock\n");
-		return PTR_ERR(mclk);
-	}
+	if (IS_ERR(mclk))
+		return dev_err_probe(&pdev->dev, PTR_ERR(mclk),
+				     "Could not get clock\n");
 
 	i2c_dev->bus_clk = bcm2835_i2c_register_div(&pdev->dev, mclk, i2c_dev);
 

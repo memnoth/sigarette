@@ -81,7 +81,9 @@
 	SRI(DP_MSE_RATE_UPDATE, DP, id), \
 	SRI(DP_PIXEL_FORMAT, DP, id), \
 	SRI(DP_SEC_CNTL, DP, id), \
+	SRI(DP_SEC_CNTL1, DP, id), \
 	SRI(DP_SEC_CNTL2, DP, id), \
+	SRI(DP_SEC_CNTL5, DP, id), \
 	SRI(DP_SEC_CNTL6, DP, id), \
 	SRI(DP_STEER_FIFO, DP, id), \
 	SRI(DP_VID_M, DP, id), \
@@ -126,7 +128,9 @@ struct dcn10_stream_enc_registers {
 	uint32_t DP_MSE_RATE_UPDATE;
 	uint32_t DP_PIXEL_FORMAT;
 	uint32_t DP_SEC_CNTL;
+	uint32_t DP_SEC_CNTL1;
 	uint32_t DP_SEC_CNTL2;
+	uint32_t DP_SEC_CNTL5;
 	uint32_t DP_SEC_CNTL6;
 	uint32_t DP_STEER_FIFO;
 	uint32_t DP_VID_M;
@@ -169,6 +173,12 @@ struct dcn10_stream_enc_registers {
 	uint32_t DP_SEC_METADATA_TRANSMISSION;
 	uint32_t HDMI_METADATA_PACKET_CONTROL;
 	uint32_t DP_SEC_FRAMING4;
+	uint32_t DP_GSP11_CNTL;
+	uint32_t HDMI_GENERIC_PACKET_CONTROL6;
+	uint32_t HDMI_GENERIC_PACKET_CONTROL7;
+	uint32_t HDMI_GENERIC_PACKET_CONTROL8;
+	uint32_t HDMI_GENERIC_PACKET_CONTROL9;
+	uint32_t HDMI_GENERIC_PACKET_CONTROL10;
 	uint32_t DIG_CLOCK_PATTERN;
 };
 
@@ -405,6 +415,8 @@ struct dcn10_stream_enc_registers {
 	type DP_SEC_GSP3_ENABLE;\
 	type DP_SEC_GSP4_ENABLE;\
 	type DP_SEC_GSP5_ENABLE;\
+	type DP_SEC_GSP5_LINE_NUM;\
+	type DP_SEC_GSP5_LINE_REFERENCE;\
 	type DP_SEC_GSP6_ENABLE;\
 	type DP_SEC_GSP7_ENABLE;\
 	type DP_SEC_GSP7_PPS;\
@@ -497,14 +509,42 @@ struct dcn10_stream_enc_registers {
 	type DP_PIXEL_COMBINE;\
 	type DP_SST_SDP_SPLITTING
 
+#define SE_REG_FIELD_LIST_DCN3_0(type) \
+	type HDMI_GENERIC8_CONT;\
+	type HDMI_GENERIC8_SEND;\
+	type HDMI_GENERIC8_LINE;\
+	type HDMI_GENERIC9_CONT;\
+	type HDMI_GENERIC9_SEND;\
+	type HDMI_GENERIC9_LINE;\
+	type HDMI_GENERIC10_CONT;\
+	type HDMI_GENERIC10_SEND;\
+	type HDMI_GENERIC10_LINE;\
+	type HDMI_GENERIC11_CONT;\
+	type HDMI_GENERIC11_SEND;\
+	type HDMI_GENERIC11_LINE;\
+	type HDMI_GENERIC12_CONT;\
+	type HDMI_GENERIC12_SEND;\
+	type HDMI_GENERIC12_LINE;\
+	type HDMI_GENERIC13_CONT;\
+	type HDMI_GENERIC13_SEND;\
+	type HDMI_GENERIC13_LINE;\
+	type HDMI_GENERIC14_CONT;\
+	type HDMI_GENERIC14_SEND;\
+	type HDMI_GENERIC14_LINE;\
+	type DP_SEC_GSP11_PPS;\
+	type DP_SEC_GSP11_ENABLE;\
+	type DP_SEC_GSP11_LINE_NUM
+
 struct dcn10_stream_encoder_shift {
 	SE_REG_FIELD_LIST_DCN1_0(uint8_t);
 	SE_REG_FIELD_LIST_DCN2_0(uint8_t);
+	SE_REG_FIELD_LIST_DCN3_0(uint8_t);
 };
 
 struct dcn10_stream_encoder_mask {
 	SE_REG_FIELD_LIST_DCN1_0(uint32_t);
 	SE_REG_FIELD_LIST_DCN2_0(uint32_t);
+	SE_REG_FIELD_LIST_DCN3_0(uint32_t);
 };
 
 struct dcn10_stream_encoder {
@@ -546,7 +586,7 @@ void enc1_stream_encoder_dvi_set_stream_attribute(
 	struct dc_crtc_timing *crtc_timing,
 	bool is_dual_link);
 
-void enc1_stream_encoder_set_mst_bandwidth(
+void enc1_stream_encoder_set_throttled_vcp_size(
 	struct stream_encoder *enc,
 	struct fixed31_32 avg_time_slots_per_mtp);
 

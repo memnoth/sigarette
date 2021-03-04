@@ -183,7 +183,6 @@ static int loongson_pci_probe(struct platform_device *pdev)
 	struct device_node *node = dev->of_node;
 	struct pci_host_bridge *bridge;
 	struct resource *regs;
-	int err;
 
 	if (!node)
 		return -ENODEV;
@@ -218,23 +217,11 @@ static int loongson_pci_probe(struct platform_device *pdev)
 		}
 	}
 
-	err = pci_parse_request_of_pci_ranges(dev, &bridge->windows,
-						&bridge->dma_ranges, NULL);
-	if (err) {
-		dev_err(dev, "failed to get bridge resources\n");
-		return err;
-	}
-
-	bridge->dev.parent = dev;
 	bridge->sysdata = priv;
 	bridge->ops = &loongson_pci_ops;
 	bridge->map_irq = loongson_map_irq;
 
-	err = pci_host_probe(bridge);
-	if (err)
-		return err;
-
-	return 0;
+	return pci_host_probe(bridge);
 }
 
 static struct platform_driver loongson_pci_driver = {

@@ -23,8 +23,8 @@
 
 #include "vc-sm-cma/vc_sm_knl.h"
 
-#include "bcm2835_isp_ctrls.h"
-#include "bcm2835_isp_fmts.h"
+#include "bcm2835-isp-ctrls.h"
+#include "bcm2835-isp-fmts.h"
 
 static unsigned int debug;
 module_param(debug, uint, 0644);
@@ -55,9 +55,12 @@ MODULE_PARM_DESC(video_nr, "base video device number");
 #define MAX_DIM 16384U
 /*
  * Minimum frame dimension of 64 pixels.  Anything lower, and the tiling
- * algorihtm may not be able to cope when applying filter context.
+ * algorithm may not be able to cope when applying filter context.
  */
 #define MIN_DIM 64U
+
+/* Timeout for stop_streaming to allow all buffers to return */
+#define COMPLETE_TIMEOUT (2 * HZ)
 
 /* Per-queue, driver-specific private data */
 struct bcm2835_isp_q_data {
@@ -69,6 +72,7 @@ struct bcm2835_isp_q_data {
 	unsigned int width;
 	unsigned int height;
 	unsigned int sizeimage;
+	enum v4l2_colorspace colorspace;
 	const struct bcm2835_isp_fmt *fmt;
 };
 
@@ -80,6 +84,7 @@ struct bcm2835_isp_node {
 	int vfl_dir;
 	unsigned int id;
 	const char *name;
+	struct vchiq_mmal_port *port;
 	struct video_device vfd;
 	struct media_pad pad;
 	struct media_intf_devnode *intf_devnode;
@@ -91,7 +96,8 @@ struct bcm2835_isp_node {
 	unsigned int sequence;
 
 	/* The list of formats supported on the node. */
-	struct bcm2835_isp_fmt_list supported_fmts;
+	struct bcm2835_isp_fmt const **supported_fmts;
+	unsigned int num_supported_fmts;
 
 	struct bcm2835_isp_q_data q_data;
 
@@ -100,7 +106,6 @@ struct bcm2835_isp_node {
 
 	bool registered;
 	bool media_node_registered;
-	bool queue_init;
 };
 
 /*
@@ -164,34 +169,12 @@ static inline enum v4l2_buf_type index_to_queue_type(int index)
 		return V4L2_BUF_TYPE_META_CAPTURE;
 }
 
-static struct vchiq_mmal_port *get_port_data(struct bcm2835_isp_node *node)
-{
-	struct bcm2835_isp_dev *dev = node_get_dev(node);
-
-	if (!dev->component)
-		return NULL;
-
-	switch (node->queue.type) {
-	case V4L2_BUF_TYPE_VIDEO_OUTPUT:
-		return &dev->component->input[node->id];
-	case V4L2_BUF_TYPE_VIDEO_CAPTURE:
-	case V4L2_BUF_TYPE_META_CAPTURE:
-		return &dev->component->output[node->id];
-	default:
-		v4l2_err(&dev->v4l2_dev, "%s: Invalid queue type %u\n",
-			 __func__, node->queue.type);
-		break;
-	}
-	return NULL;
-}
-
 static int set_isp_param(struct bcm2835_isp_node *node, u32 parameter,
 			 void *value, u32 value_size)
 {
-	struct vchiq_mmal_port *port = get_port_data(node);
 	struct bcm2835_isp_dev *dev = node_get_dev(node);
 
-	return vchiq_mmal_port_parameter_set(dev->mmal_instance, port,
+	return vchiq_mmal_port_parameter_set(dev->mmal_instance, node->port,
 					     parameter, value, value_size);
 }
 
@@ -233,12 +216,11 @@ static const
 struct bcm2835_isp_fmt *find_format_by_fourcc(unsigned int fourcc,
 					      struct bcm2835_isp_node *node)
 {
-	struct bcm2835_isp_fmt_list *fmts = &node->supported_fmts;
 	const struct bcm2835_isp_fmt *fmt;
 	unsigned int i;
 
-	for (i = 0; i < fmts->num_entries; i++) {
-		fmt = fmts->list[i];
+	for (i = 0; i < node->num_supported_fmts; i++) {
+		fmt = node->supported_fmts[i];
 		if (fmt->fourcc == fourcc)
 			return fmt;
 	}
@@ -330,6 +312,43 @@ static void mmal_buffer_cb(struct vchiq_mmal_instance *instance,
 		complete(&dev->frame_cmplt);
 }
 
+struct colorspace_translation {
+	enum v4l2_colorspace v4l2_value;
+	u32 mmal_value;
+};
+
+static u32 translate_color_space(enum v4l2_colorspace color_space)
+{
+	static const struct colorspace_translation translations[] = {
+		{ V4L2_COLORSPACE_DEFAULT, MMAL_COLOR_SPACE_UNKNOWN },
+		{ V4L2_COLORSPACE_SMPTE170M, MMAL_COLOR_SPACE_ITUR_BT601 },
+		{ V4L2_COLORSPACE_SMPTE240M, MMAL_COLOR_SPACE_SMPTE240M },
+		{ V4L2_COLORSPACE_REC709, MMAL_COLOR_SPACE_ITUR_BT709 },
+		/* V4L2_COLORSPACE_BT878 unavailable */
+		{ V4L2_COLORSPACE_470_SYSTEM_M, MMAL_COLOR_SPACE_BT470_2_M },
+		{ V4L2_COLORSPACE_470_SYSTEM_BG, MMAL_COLOR_SPACE_BT470_2_BG },
+		{ V4L2_COLORSPACE_JPEG, MMAL_COLOR_SPACE_JPEG_JFIF },
+		/*
+		 * We don't have an encoding for SRGB as such, but VideoCore
+		 * will do the right thing if it gets "unknown".
+		 */
+		{ V4L2_COLORSPACE_SRGB, MMAL_COLOR_SPACE_UNKNOWN },
+		/* V4L2_COLORSPACE_OPRGB unavailable */
+		/* V4L2_COLORSPACE_BT2020 unavailable */
+		/* V4L2_COLORSPACE_RAW unavailable */
+		/* V4L2_COLORSPACE_DCI_P3 unavailable */
+	};
+
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(translations); i++) {
+		if (color_space == translations[i].v4l2_value)
+			return translations[i].mmal_value;
+	}
+
+	return MMAL_COLOR_SPACE_UNKNOWN;
+}
+
 static void setup_mmal_port_format(struct bcm2835_isp_node *node,
 				   struct vchiq_mmal_port *port)
 {
@@ -343,11 +362,11 @@ static void setup_mmal_port_format(struct bcm2835_isp_node *node,
 	port->es.video.crop.height = q_data->height;
 	port->es.video.crop.x = 0;
 	port->es.video.crop.y = 0;
+	port->es.video.color_space = translate_color_space(q_data->colorspace);
 };
 
 static int setup_mmal_port(struct bcm2835_isp_node *node)
 {
-	struct vchiq_mmal_port *port = get_port_data(node);
 	struct bcm2835_isp_dev *dev = node_get_dev(node);
 	unsigned int enable = 1;
 	int ret;
@@ -355,11 +374,11 @@ static int setup_mmal_port(struct bcm2835_isp_node *node)
 	v4l2_dbg(2, debug, &dev->v4l2_dev, "%s: setup %s[%d]\n", __func__,
 		 node->name, node->id);
 
-	vchiq_mmal_port_parameter_set(dev->mmal_instance, port,
+	vchiq_mmal_port_parameter_set(dev->mmal_instance, node->port,
 				      MMAL_PARAMETER_ZERO_COPY, &enable,
 				      sizeof(enable));
-	setup_mmal_port_format(node, port);
-	ret = vchiq_mmal_port_set_format(dev->mmal_instance, port);
+	setup_mmal_port_format(node, node->port);
+	ret = vchiq_mmal_port_set_format(dev->mmal_instance, node->port);
 	if (ret < 0) {
 		v4l2_dbg(1, debug, &dev->v4l2_dev,
 			 "%s: vchiq_mmal_port_set_format failed\n",
@@ -367,10 +386,11 @@ static int setup_mmal_port(struct bcm2835_isp_node *node)
 		return ret;
 	}
 
-	if (node->q_data.sizeimage < port->minimum_buffer.size) {
+	if (node->q_data.sizeimage < node->port->minimum_buffer.size) {
 		v4l2_err(&dev->v4l2_dev,
 			 "buffer size mismatch sizeimage %u < min size %u\n",
-			 node->q_data.sizeimage, port->minimum_buffer.size);
+			 node->q_data.sizeimage,
+			 node->port->minimum_buffer.size);
 		return -EINVAL;
 	}
 
@@ -396,7 +416,6 @@ static int bcm2835_isp_node_queue_setup(struct vb2_queue *q,
 					struct device *alloc_devs[])
 {
 	struct bcm2835_isp_node *node = vb2_get_drv_priv(q);
-	struct vchiq_mmal_port *port;
 	unsigned int size;
 
 	if (setup_mmal_port(node))
@@ -416,13 +435,12 @@ static int bcm2835_isp_node_queue_setup(struct vb2_queue *q,
 	*nplanes = 1;
 	sizes[0] = size;
 
-	port = get_port_data(node);
-	port->current_buffer.size = size;
+	node->port->current_buffer.size = size;
 
-	if (*nbuffers < port->minimum_buffer.num)
-		*nbuffers = port->minimum_buffer.num;
+	if (*nbuffers < node->port->minimum_buffer.num)
+		*nbuffers = node->port->minimum_buffer.num;
 
-	port->current_buffer.num = *nbuffers;
+	node->port->current_buffer.num = *nbuffers;
 
 	v4l2_dbg(2, debug, &node_get_dev(node)->v4l2_dev,
 		 "%s: Image size %u, nbuffers %u for node %s[%d]\n",
@@ -552,8 +570,7 @@ static void bcm2835_isp_node_buffer_queue(struct vb2_buffer *buf)
 	v4l2_dbg(3, debug, &dev->v4l2_dev,
 		 "%s: node %s[%d] - submitting  mmal dmabuf %p\n", __func__,
 		 node->name, node->id, buffer->mmal.dma_buf);
-	vchiq_mmal_submit_buffer(dev->mmal_instance, get_port_data(node),
-				 &buffer->mmal);
+	vchiq_mmal_submit_buffer(dev->mmal_instance, node->port, &buffer->mmal);
 }
 
 static void bcm2835_isp_buffer_cleanup(struct vb2_buffer *vb)
@@ -570,7 +587,6 @@ static int bcm2835_isp_node_start_streaming(struct vb2_queue *q,
 {
 	struct bcm2835_isp_node *node = vb2_get_drv_priv(q);
 	struct bcm2835_isp_dev *dev = node_get_dev(node);
-	struct vchiq_mmal_port *port = get_port_data(node);
 	int ret;
 
 	v4l2_dbg(1, debug, &dev->v4l2_dev, "%s: node %s[%d] (count %u)\n",
@@ -584,8 +600,8 @@ static int bcm2835_isp_node_start_streaming(struct vb2_queue *q,
 	}
 
 	node->sequence = 0;
-	port->cb_ctx = node;
-	ret = vchiq_mmal_port_enable(dev->mmal_instance, port,
+	node->port->cb_ctx = node;
+	ret = vchiq_mmal_port_enable(dev->mmal_instance, node->port,
 				     mmal_buffer_cb);
 	if (!ret)
 		atomic_inc(&dev->num_streaming);
@@ -600,33 +616,33 @@ static void bcm2835_isp_node_stop_streaming(struct vb2_queue *q)
 {
 	struct bcm2835_isp_node *node = vb2_get_drv_priv(q);
 	struct bcm2835_isp_dev *dev = node_get_dev(node);
-	struct vchiq_mmal_port *port = get_port_data(node);
 	unsigned int i;
 	int ret;
 
 	v4l2_dbg(1, debug, &dev->v4l2_dev, "%s: node %s[%d], mmal port %p\n",
-		 __func__, node->name, node->id, port);
+		 __func__, node->name, node->id, node->port);
 
 	init_completion(&dev->frame_cmplt);
 
 	/* Disable MMAL port - this will flush buffers back */
-	ret = vchiq_mmal_port_disable(dev->mmal_instance, port);
+	ret = vchiq_mmal_port_disable(dev->mmal_instance, node->port);
 	if (ret)
 		v4l2_err(&dev->v4l2_dev,
 			 "%s: Failed disabling %s port, ret %d\n", __func__,
 			 node_is_output(node) ? "i/p" : "o/p",
 			 ret);
 
-	while (atomic_read(&port->buffers_with_vpu)) {
+	while (atomic_read(&node->port->buffers_with_vpu)) {
 		v4l2_dbg(1, debug, &dev->v4l2_dev,
 			 "%s: Waiting for buffers to be returned - %d outstanding\n",
-			 __func__, atomic_read(&port->buffers_with_vpu));
-		ret = wait_for_completion_timeout(&dev->frame_cmplt, HZ);
+			 __func__, atomic_read(&node->port->buffers_with_vpu));
+		ret = wait_for_completion_timeout(&dev->frame_cmplt,
+						  COMPLETE_TIMEOUT);
 		if (ret <= 0) {
 			v4l2_err(&dev->v4l2_dev,
 				 "%s: Timeout waiting for buffers to be returned - %d outstanding\n",
 				 __func__,
-				 atomic_read(&port->buffers_with_vpu));
+				 atomic_read(&node->port->buffers_with_vpu));
 			break;
 		}
 	}
@@ -672,7 +688,7 @@ static const struct vb2_ops bcm2835_isp_node_queue_ops = {
 static const
 struct bcm2835_isp_fmt *get_default_format(struct bcm2835_isp_node *node)
 {
-	return node->supported_fmts.list[0];
+	return node->supported_fmts[0];
 }
 
 static inline unsigned int get_bytesperline(int width,
@@ -725,30 +741,41 @@ static int bcm2835_isp_s_ctrl(struct v4l2_ctrl *ctrl)
 		break;
 	case V4L2_CID_USER_BCM2835_ISP_LENS_SHADING:
 	{
-		struct bcm2835_isp_lens_shading ls;
+		struct bcm2835_isp_lens_shading *v4l2_ls;
+		struct mmal_parameter_lens_shading_v2 ls;
 		struct dma_buf *dmabuf;
 		void *vcsm_handle;
 
-		memcpy(&ls, ctrl->p_new.p_u8,
-		       sizeof(struct bcm2835_isp_lens_shading));
+		v4l2_ls = (struct bcm2835_isp_lens_shading *)ctrl->p_new.p_u8;
+		/*
+		 * struct bcm2835_isp_lens_shading and struct
+		 * mmal_parameter_lens_shading_v2 match so that we can do a
+		 * simple memcpy here.
+		 * Only the dmabuf to the actual table needs any manipulation.
+		 */
+		memcpy(&ls, v4l2_ls, sizeof(ls));
 
-		dmabuf = dma_buf_get(ls.dmabuf);
+		dmabuf = dma_buf_get(v4l2_ls->dmabuf);
 		if (IS_ERR_OR_NULL(dmabuf))
 			return -EINVAL;
 
-		ret = vc_sm_cma_import_dmabuf(dmabuf,
-					      &vcsm_handle);
+		ret = vc_sm_cma_import_dmabuf(dmabuf, &vcsm_handle);
 		if (ret) {
 			dma_buf_put(dmabuf);
 			return -EINVAL;
 		}
 
-		ls.dmabuf = vc_sm_cma_int_handle(vcsm_handle);
-		if (ls.dmabuf)
+		ls.mem_handle_table = vc_sm_cma_int_handle(vcsm_handle);
+		if (ls.mem_handle_table)
+			/* The VPU will take a reference on the vcsm handle,
+			 * which in turn will retain a reference on the dmabuf.
+			 * This code can therefore safely release all
+			 * references to the buffer.
+			 */
 			ret = set_isp_param(node,
 					    MMAL_PARAMETER_LENS_SHADING_OVERRIDE,
 					    &ls,
-					    sizeof(struct bcm2835_isp_lens_shading));
+					    sizeof(ls));
 		else
 			ret = -EINVAL;
 
@@ -775,6 +802,11 @@ static int bcm2835_isp_s_ctrl(struct v4l2_ctrl *ctrl)
 		ret = set_isp_param(node, MMAL_PARAMETER_DENOISE,
 				    ctrl->p_new.p_u8,
 				    sizeof(struct bcm2835_isp_denoise));
+		break;
+	case V4L2_CID_USER_BCM2835_ISP_CDN:
+		ret = set_isp_param(node, MMAL_PARAMETER_CDN,
+				    ctrl->p_new.p_u8,
+				    sizeof(struct bcm2835_isp_cdn));
 		break;
 	case V4L2_CID_USER_BCM2835_ISP_SHARPEN:
 		ret = set_isp_param(node, MMAL_PARAMETER_SHARPEN,
@@ -818,7 +850,6 @@ static int populate_qdata_fmt(struct v4l2_format *f,
 {
 	struct bcm2835_isp_dev *dev = node_get_dev(node);
 	struct bcm2835_isp_q_data *q_data = &node->q_data;
-	struct vchiq_mmal_port *port;
 	int ret;
 
 	if (!node_is_stats(node)) {
@@ -835,6 +866,9 @@ static int populate_qdata_fmt(struct v4l2_format *f,
 		/* All parameters should have been set correctly by try_fmt */
 		q_data->bytesperline = f->fmt.pix.bytesperline;
 		q_data->sizeimage = f->fmt.pix.sizeimage;
+
+		/* We must indicate which of the allowed colour spaces we have. */
+		q_data->colorspace = f->fmt.pix.colorspace;
 	} else {
 		v4l2_dbg(1, debug, &dev->v4l2_dev,
 			 "%s: Setting meta format for fmt: %08x, size %u\n",
@@ -846,16 +880,17 @@ static int populate_qdata_fmt(struct v4l2_format *f,
 		q_data->height = 0;
 		q_data->bytesperline = 0;
 		q_data->sizeimage = f->fmt.meta.buffersize;
+
+		/* This won't mean anything for metadata, but may as well fill it in. */
+		q_data->colorspace = V4L2_COLORSPACE_DEFAULT;
 	}
 
 	v4l2_dbg(1, debug, &dev->v4l2_dev,
 		 "%s: Calculated bpl as %u, size %u\n", __func__,
 		 q_data->bytesperline, q_data->sizeimage);
 
-	/* If we have a component then setup the port as well */
-	port = get_port_data(node);
-	setup_mmal_port_format(node, port);
-	ret = vchiq_mmal_port_set_format(dev->mmal_instance, port);
+	setup_mmal_port_format(node, node->port);
+	ret = vchiq_mmal_port_set_format(dev->mmal_instance, node->port);
 	if (ret) {
 		v4l2_err(&dev->v4l2_dev,
 			 "%s: Failed vchiq_mmal_port_set_format on port, ret %d\n",
@@ -863,12 +898,12 @@ static int populate_qdata_fmt(struct v4l2_format *f,
 		ret = -EINVAL;
 	}
 
-	if (q_data->sizeimage < port->minimum_buffer.size) {
+	if (q_data->sizeimage < node->port->minimum_buffer.size) {
 		v4l2_err(&dev->v4l2_dev,
 			 "%s: Current buffer size of %u < min buf size %u - driver mismatch to MMAL\n",
 			 __func__,
 			 q_data->sizeimage,
-			 port->minimum_buffer.size);
+			 node->port->minimum_buffer.size);
 	}
 
 	v4l2_dbg(1, debug, &dev->v4l2_dev,
@@ -901,7 +936,7 @@ static int bcm2835_isp_node_g_fmt(struct file *file, void *priv,
 	if (node_is_stats(node)) {
 		f->fmt.meta.dataformat = V4L2_META_FMT_BCM2835_ISP_STATS;
 		f->fmt.meta.buffersize =
-			get_port_data(node)->minimum_buffer.size;
+			node->port->minimum_buffer.size;
 	} else {
 		struct bcm2835_isp_q_data *q_data = &node->q_data;
 
@@ -911,7 +946,7 @@ static int bcm2835_isp_node_g_fmt(struct file *file, void *priv,
 		f->fmt.pix.pixelformat = q_data->fmt->fourcc;
 		f->fmt.pix.bytesperline = q_data->bytesperline;
 		f->fmt.pix.sizeimage = q_data->sizeimage;
-		f->fmt.pix.colorspace = q_data->fmt->colorspace;
+		f->fmt.pix.colorspace = q_data->colorspace;
 	}
 
 	return 0;
@@ -921,15 +956,14 @@ static int bcm2835_isp_node_enum_fmt(struct file *file, void  *priv,
 				     struct v4l2_fmtdesc *f)
 {
 	struct bcm2835_isp_node *node = video_drvdata(file);
-	struct bcm2835_isp_fmt_list *fmts = &node->supported_fmts;
 
 	if (f->type != node->queue.type)
 		return -EINVAL;
 
-	if (f->index < fmts->num_entries) {
+	if (f->index < node->num_supported_fmts) {
 		/* Format found */
-		f->pixelformat = fmts->list[f->index]->fourcc;
-		f->flags = fmts->list[f->index]->flags;
+		f->pixelformat = node->supported_fmts[f->index]->fourcc;
+		f->flags = 0;
 		return 0;
 	}
 
@@ -979,13 +1013,29 @@ static int bcm2835_isp_node_try_fmt(struct file *file, void *priv,
 		fmt = get_default_format(node);
 
 	if (!node_is_stats(node)) {
+		int is_rgb;
+
 		f->fmt.pix.width = max(min(f->fmt.pix.width, MAX_DIM),
 				       MIN_DIM);
 		f->fmt.pix.height = max(min(f->fmt.pix.height, MAX_DIM),
 					MIN_DIM);
 
 		f->fmt.pix.pixelformat = fmt->fourcc;
-		f->fmt.pix.colorspace = fmt->colorspace;
+
+		/*
+		 * Fill in the actual colour space when the requested one was
+		 * not supported. This also catches the case when the "default"
+		 * colour space was requested (as that's never in the mask).
+		 */
+		if (!(V4L2_COLORSPACE_MASK(f->fmt.pix.colorspace) & fmt->colorspace_mask))
+			f->fmt.pix.colorspace = fmt->colorspace_default;
+		/* In all cases, we only support the defaults for these: */
+		f->fmt.pix.ycbcr_enc = V4L2_MAP_YCBCR_ENC_DEFAULT(f->fmt.pix.colorspace);
+		f->fmt.pix.xfer_func = V4L2_MAP_XFER_FUNC_DEFAULT(f->fmt.pix.colorspace);
+		is_rgb = f->fmt.pix.colorspace == V4L2_COLORSPACE_SRGB;
+		f->fmt.pix.quantization = V4L2_MAP_QUANTIZATION_DEFAULT(is_rgb, f->fmt.pix.colorspace,
+									f->fmt.pix.ycbcr_enc);
+
 		f->fmt.pix.bytesperline = get_bytesperline(f->fmt.pix.width,
 							   fmt);
 		f->fmt.pix.field = V4L2_FIELD_NONE;
@@ -994,8 +1044,7 @@ static int bcm2835_isp_node_try_fmt(struct file *file, void *priv,
 				      f->fmt.pix.height, fmt);
 	} else {
 		f->fmt.meta.dataformat = fmt->fourcc;
-		f->fmt.meta.buffersize =
-				get_port_data(node)->minimum_buffer.size;
+		f->fmt.meta.buffersize = node->port->minimum_buffer.size;
 	}
 
 	return 0;
@@ -1027,7 +1076,6 @@ static int bcm2835_isp_node_s_selection(struct file *file, void *fh,
 	struct mmal_parameter_crop crop;
 	struct bcm2835_isp_node *node = video_drvdata(file);
 	struct bcm2835_isp_dev *dev = node_get_dev(node);
-	struct vchiq_mmal_port *port = get_port_data(node);
 
 	/* This return value is required fro V4L2 compliance. */
 	if (node_is_stats(node))
@@ -1068,7 +1116,7 @@ static int bcm2835_isp_node_s_selection(struct file *file, void *fh,
 	crop.rect.width = s->r.width;
 	crop.rect.height = s->r.height;
 
-	return vchiq_mmal_port_parameter_set(dev->mmal_instance, port,
+	return vchiq_mmal_port_parameter_set(dev->mmal_instance, node->port,
 					     MMAL_PARAMETER_CROP,
 					     &crop, sizeof(crop));
 }
@@ -1078,7 +1126,6 @@ static int bcm2835_isp_node_g_selection(struct file *file, void *fh,
 {
 	struct mmal_parameter_crop crop;
 	struct bcm2835_isp_node *node = video_drvdata(file);
-	struct vchiq_mmal_port *port = get_port_data(node);
 	struct bcm2835_isp_dev *dev = node_get_dev(node);
 	u32 crop_size = sizeof(crop);
 	int ret;
@@ -1086,7 +1133,8 @@ static int bcm2835_isp_node_g_selection(struct file *file, void *fh,
 	/* We can only return out an input crop. */
 	switch (s->target) {
 	case V4L2_SEL_TGT_CROP:
-		ret = vchiq_mmal_port_parameter_get(dev->mmal_instance, port,
+		ret = vchiq_mmal_port_parameter_get(dev->mmal_instance,
+						    node->port,
 						    MMAL_PARAMETER_CROP,
 						    &crop, &crop_size);
 		if (!ret) {
@@ -1164,10 +1212,11 @@ static const struct v4l2_ioctl_ops bcm2835_isp_node_ioctl_ops = {
  * Size of the array to provide to the VPU when asking for the list of supported
  * formats.
  *
- * The ISP component currently advertises 44 input formats, so add a small
- * overhead on that.
+ * The ISP component currently advertises 62 input formats, so add a small
+ * overhead on that. Should the component advertise more formats then the excess
+ * will be dropped and a warning logged.
  */
-#define MAX_SUPPORTED_ENCODINGS 50
+#define MAX_SUPPORTED_ENCODINGS 70
 
 /* Populate node->supported_fmts with the formats supported by those ports. */
 static int bcm2835_isp_get_supported_fmts(struct bcm2835_isp_node *node)
@@ -1179,16 +1228,16 @@ static int bcm2835_isp_get_supported_fmts(struct bcm2835_isp_node *node)
 	u32 param_size = sizeof(fourccs);
 	int ret;
 
-	ret = vchiq_mmal_port_parameter_get(dev->mmal_instance,
-					    get_port_data(node),
+	ret = vchiq_mmal_port_parameter_get(dev->mmal_instance, node->port,
 					    MMAL_PARAMETER_SUPPORTED_ENCODINGS,
 					    &fourccs, &param_size);
 
 	if (ret) {
 		if (ret == MMAL_MSG_STATUS_ENOSPC) {
 			v4l2_err(&dev->v4l2_dev,
-				 "%s: port has more encoding than we provided space for. Some are dropped.\n",
-				 __func__);
+				 "%s: port has more encodings than we provided space for. Some are dropped (%u vs %u).\n",
+				 __func__, param_size / sizeof(u32),
+				 MAX_SUPPORTED_ENCODINGS);
 			num_encodings = MAX_SUPPORTED_ENCODINGS;
 		} else {
 			v4l2_err(&dev->v4l2_dev, "%s: get_param ret %u.\n",
@@ -1208,7 +1257,7 @@ static int bcm2835_isp_get_supported_fmts(struct bcm2835_isp_node *node)
 			    GFP_KERNEL);
 	if (!list)
 		return -ENOMEM;
-	node->supported_fmts.list = list;
+	node->supported_fmts = list;
 
 	for (i = 0, j = 0; i < num_encodings; i++) {
 		const struct bcm2835_isp_fmt *fmt = get_fmt(fourccs[i]);
@@ -1218,7 +1267,7 @@ static int bcm2835_isp_get_supported_fmts(struct bcm2835_isp_node *node)
 			j++;
 		}
 	}
-	node->supported_fmts.num_entries = j;
+	node->num_supported_fmts = j;
 
 	return 0;
 }
@@ -1255,6 +1304,7 @@ static int register_node(struct bcm2835_isp_dev *dev,
 		node->id = index;
 		node->vfl_dir = VFL_DIR_TX;
 		node->name = "output";
+		node->port = &dev->component->input[node->id];
 		break;
 	case V4L2_BUF_TYPE_VIDEO_CAPTURE:
 		vfd->device_caps = V4L2_CAP_VIDEO_CAPTURE | V4L2_CAP_STREAMING;
@@ -1262,6 +1312,7 @@ static int register_node(struct bcm2835_isp_dev *dev,
 		node->id = index - BCM2835_ISP_NUM_OUTPUTS;
 		node->vfl_dir = VFL_DIR_RX;
 		node->name = "capture";
+		node->port = &dev->component->output[node->id];
 		v4l2_disable_ioctl(&node->vfd, VIDIOC_S_CTRL);
 		v4l2_disable_ioctl(&node->vfd, VIDIOC_S_SELECTION);
 		v4l2_disable_ioctl(&node->vfd, VIDIOC_G_SELECTION);
@@ -1271,6 +1322,7 @@ static int register_node(struct bcm2835_isp_dev *dev,
 		node->id = index - BCM2835_ISP_NUM_OUTPUTS;
 		node->vfl_dir = VFL_DIR_RX;
 		node->name = "stats";
+		node->port = &dev->component->output[node->id];
 		v4l2_disable_ioctl(&node->vfd, VIDIOC_S_CTRL);
 		v4l2_disable_ioctl(&node->vfd, VIDIOC_S_SELECTION);
 		v4l2_disable_ioctl(&node->vfd, VIDIOC_G_SELECTION);
@@ -1286,7 +1338,7 @@ static int register_node(struct bcm2835_isp_dev *dev,
 	if (ret)
 		return ret;
 
-	/* Initialise the the video node. */
+	/* Initialise the video node. */
 	vfd->vfl_type	= VFL_TYPE_VIDEO;
 	vfd->fops	= &bcm2835_isp_fops,
 	vfd->ioctl_ops	= &bcm2835_isp_node_ioctl_ops,
@@ -1303,11 +1355,12 @@ static int register_node(struct bcm2835_isp_dev *dev,
 	node->q_data.bytesperline =
 		get_bytesperline(DEFAULT_DIM, node->q_data.fmt);
 	node->q_data.sizeimage = node_is_stats(node) ?
-				 get_port_data(node)->recommended_buffer.size :
+				 node->port->recommended_buffer.size :
 				 get_sizeimage(node->q_data.bytesperline,
 					       node->q_data.width,
 					       node->q_data.height,
 					       node->q_data.fmt);
+	node->q_data.colorspace = node->q_data.fmt->colorspace_default;
 
 	queue->io_modes = VB2_MMAP | VB2_DMABUF;
 	queue->drv_priv = node;
@@ -1323,13 +1376,12 @@ static int register_node(struct bcm2835_isp_dev *dev,
 		v4l2_info(&dev->v4l2_dev, "vb2_queue_init failed\n");
 		return ret;
 	}
-	node->queue_init = true;
 
 	/* Set some controls and defaults, but only on the VIDEO_OUTPUT node. */
 	if (node_is_output(node)) {
 		unsigned int i;
 
-		/* Use this ctrl template to assign all out ISP custom ctrls. */
+		/* Use this ctrl template to assign custom ISP ctrls. */
 		struct v4l2_ctrl_config ctrl_template = {
 			.ops		= &bcm2835_isp_ctrl_ops,
 			.type		= V4L2_CTRL_TYPE_U8,
@@ -1339,11 +1391,13 @@ static int register_node(struct bcm2835_isp_dev *dev,
 			.step		= 1,
 		};
 
-		ret = v4l2_ctrl_handler_init(&dev->ctrl_handler, 12);
+		/* 3 standard controls, and an array of custom controls */
+		ret = v4l2_ctrl_handler_init(&dev->ctrl_handler,
+					     3 + ARRAY_SIZE(custom_ctrls));
 		if (ret) {
 			v4l2_err(&dev->v4l2_dev, "ctrl_handler init failed (%d)\n",
 				 ret);
-			return ret;
+			goto queue_cleanup;
 		}
 
 		dev->r_gain = 1000;
@@ -1401,7 +1455,10 @@ static int register_node(struct bcm2835_isp_dev *dev,
 	return 0;
 
 ctrl_cleanup:
-	v4l2_ctrl_handler_free(&dev->ctrl_handler);
+	if (node_is_output(node))
+		v4l2_ctrl_handler_free(&dev->ctrl_handler);
+queue_cleanup:
+	vb2_queue_release(&node->queue);
 	return ret;
 }
 
@@ -1414,24 +1471,21 @@ static void unregister_node(struct bcm2835_isp_node *node)
 		  "Unregistering node %s[%d] device node /dev/video%d\n",
 		  node->name, node->id, node->vfd.num);
 
-	if (node->queue_init)
-		vb2_queue_release(&node->queue);
-
 	if (node->registered) {
 		video_unregister_device(&node->vfd);
 		if (node_is_output(node))
 			v4l2_ctrl_handler_free(&dev->ctrl_handler);
+		vb2_queue_release(&node->queue);
 	}
 
 	/*
 	 * node->supported_fmts.list is free'd automatically
 	 * as a managed resource.
 	 */
-	node->supported_fmts.list = NULL;
-	node->supported_fmts.num_entries = 0;
+	node->supported_fmts = NULL;
+	node->num_supported_fmts = 0;
 	node->vfd.ctrl_handler = NULL;
 	node->registered = false;
-	node->queue_init = false;
 }
 
 static void media_controller_unregister(struct bcm2835_isp_dev *dev)
@@ -1655,9 +1709,9 @@ static int bcm2835_isp_probe(struct platform_device *pdev)
 		goto error;
 	}
 
-	if ((dev->component->inputs != BCM2835_ISP_NUM_OUTPUTS) ||
-	    (dev->component->outputs != BCM2835_ISP_NUM_CAPTURES +
-					BCM2835_ISP_NUM_METADATA)) {
+	if (dev->component->inputs < BCM2835_ISP_NUM_OUTPUTS ||
+	    dev->component->outputs < BCM2835_ISP_NUM_CAPTURES +
+					BCM2835_ISP_NUM_METADATA) {
 		v4l2_err(&dev->v4l2_dev,
 			 "%s: ril.isp returned %d i/p (%d expected), %d o/p (%d expected) ports\n",
 			  __func__, dev->component->inputs,

@@ -69,6 +69,11 @@
 #define EDT_RAW_DATA_RETRIES		100
 #define EDT_RAW_DATA_DELAY		1000 /* usec */
 
+#define EDT_DEFAULT_NUM_X		1024
+#define EDT_DEFAULT_NUM_Y		1024
+
+#define POLL_INTERVAL_MS		17	/* 17ms = 60fps */
+
 enum edt_pmode {
 	EDT_PMODE_NOT_SUPPORTED,
 	EDT_PMODE_HIBERNATE,
@@ -126,6 +131,9 @@ struct edt_ft5x06_ts_data {
 
 	struct edt_reg_addr reg_addr;
 	enum edt_ver version;
+
+	struct timer_list timer;
+	struct work_struct work_i2c_poll;
 };
 
 struct edt_i2c_chip_data {
@@ -275,6 +283,22 @@ out:
 	return IRQ_HANDLED;
 }
 
+static void edt_ft5x06_ts_irq_poll_timer(struct timer_list *t)
+{
+	struct edt_ft5x06_ts_data *tsdata = from_timer(tsdata, t, timer);
+
+	schedule_work(&tsdata->work_i2c_poll);
+	mod_timer(&tsdata->timer, jiffies + msecs_to_jiffies(POLL_INTERVAL_MS));
+}
+
+static void edt_ft5x06_ts_work_i2c_poll(struct work_struct *work)
+{
+	struct edt_ft5x06_ts_data *tsdata = container_of(work,
+			struct edt_ft5x06_ts_data, work_i2c_poll);
+
+	edt_ft5x06_ts_isr(0, tsdata);
+}
+
 static int edt_ft5x06_register_write(struct edt_ft5x06_ts_data *tsdata,
 				     u8 addr, u8 value)
 {
@@ -288,7 +312,7 @@ static int edt_ft5x06_register_write(struct edt_ft5x06_ts_data *tsdata,
 		wrbuf[3] = wrbuf[0] ^ wrbuf[1] ^ wrbuf[2];
 		return edt_ft5x06_ts_readwrite(tsdata->client, 4,
 					wrbuf, 0, NULL);
-	/* fallthrough */
+
 	case EDT_M09:
 	case EDT_M12:
 	case EV_FT:
@@ -330,7 +354,6 @@ static int edt_ft5x06_register_read(struct edt_ft5x06_ts_data *tsdata,
 		}
 		break;
 
-	/* fallthrough */
 	case EDT_M09:
 	case EDT_M12:
 	case EV_FT:
@@ -978,8 +1001,7 @@ static void edt_ft5x06_ts_get_defaults(struct device *dev,
 	}
 }
 
-static void
-edt_ft5x06_ts_get_parameters(struct edt_ft5x06_ts_data *tsdata)
+static void edt_ft5x06_ts_get_parameters(struct edt_ft5x06_ts_data *tsdata)
 {
 	struct edt_reg_addr *reg_addr = &tsdata->reg_addr;
 
@@ -998,21 +1020,17 @@ edt_ft5x06_ts_get_parameters(struct edt_ft5x06_ts_data *tsdata)
 	if (reg_addr->reg_report_rate != NO_REGISTER)
 		tsdata->report_rate = edt_ft5x06_register_read(tsdata,
 						reg_addr->reg_report_rate);
-	if (tsdata->version == EDT_M06 ||
-	    tsdata->version == EDT_M09 ||
-	    tsdata->version == EDT_M12) {
+	tsdata->num_x = EDT_DEFAULT_NUM_X;
+	if (reg_addr->reg_num_x != NO_REGISTER)
 		tsdata->num_x = edt_ft5x06_register_read(tsdata,
 							 reg_addr->reg_num_x);
+	tsdata->num_y = EDT_DEFAULT_NUM_Y;
+	if (reg_addr->reg_num_y != NO_REGISTER)
 		tsdata->num_y = edt_ft5x06_register_read(tsdata,
 							 reg_addr->reg_num_y);
-	} else {
-		tsdata->num_x = -1;
-		tsdata->num_y = -1;
-	}
 }
 
-static void
-edt_ft5x06_ts_set_regs(struct edt_ft5x06_ts_data *tsdata)
+static void edt_ft5x06_ts_set_regs(struct edt_ft5x06_ts_data *tsdata)
 {
 	struct edt_reg_addr *reg_addr = &tsdata->reg_addr;
 
@@ -1042,22 +1060,25 @@ edt_ft5x06_ts_set_regs(struct edt_ft5x06_ts_data *tsdata)
 
 	case EV_FT:
 		reg_addr->reg_threshold = EV_REGISTER_THRESHOLD;
+		reg_addr->reg_report_rate = NO_REGISTER;
 		reg_addr->reg_gain = EV_REGISTER_GAIN;
 		reg_addr->reg_offset = NO_REGISTER;
 		reg_addr->reg_offset_x = EV_REGISTER_OFFSET_X;
 		reg_addr->reg_offset_y = EV_REGISTER_OFFSET_Y;
 		reg_addr->reg_num_x = NO_REGISTER;
 		reg_addr->reg_num_y = NO_REGISTER;
-		reg_addr->reg_report_rate = NO_REGISTER;
 		break;
 
 	case GENERIC_FT:
 		/* this is a guesswork */
 		reg_addr->reg_threshold = M09_REGISTER_THRESHOLD;
+		reg_addr->reg_report_rate = NO_REGISTER;
 		reg_addr->reg_gain = M09_REGISTER_GAIN;
 		reg_addr->reg_offset = M09_REGISTER_OFFSET;
 		reg_addr->reg_offset_x = NO_REGISTER;
 		reg_addr->reg_offset_y = NO_REGISTER;
+		reg_addr->reg_num_x = NO_REGISTER;
+		reg_addr->reg_num_y = NO_REGISTER;
 		break;
 	}
 }
@@ -1196,20 +1217,10 @@ static int edt_ft5x06_ts_probe(struct i2c_client *client,
 	input->id.bustype = BUS_I2C;
 	input->dev.parent = &client->dev;
 
-	if (tsdata->version == EDT_M06 ||
-	    tsdata->version == EDT_M09 ||
-	    tsdata->version == EDT_M12) {
-		input_set_abs_params(input, ABS_MT_POSITION_X,
-				     0, tsdata->num_x * 64 - 1, 0, 0);
-		input_set_abs_params(input, ABS_MT_POSITION_Y,
-				     0, tsdata->num_y * 64 - 1, 0, 0);
-	} else {
-		/* Unknown maximum values. Specify via devicetree */
-		input_set_abs_params(input, ABS_MT_POSITION_X,
-				     0, 65535, 0, 0);
-		input_set_abs_params(input, ABS_MT_POSITION_Y,
-				     0, 65535, 0, 0);
-	}
+	input_set_abs_params(input, ABS_MT_POSITION_X,
+			     0, tsdata->num_x * 64 - 1, 0, 0);
+	input_set_abs_params(input, ABS_MT_POSITION_Y,
+			     0, tsdata->num_y * 64 - 1, 0, 0);
 
 	touchscreen_parse_properties(input, true, &tsdata->prop);
 
@@ -1222,17 +1233,27 @@ static int edt_ft5x06_ts_probe(struct i2c_client *client,
 
 	i2c_set_clientdata(client, tsdata);
 
-	irq_flags = irq_get_trigger_type(client->irq);
-	if (irq_flags == IRQF_TRIGGER_NONE)
-		irq_flags = IRQF_TRIGGER_FALLING;
-	irq_flags |= IRQF_ONESHOT;
+	if (client->irq) {
+		irq_flags = irq_get_trigger_type(client->irq);
+		if (irq_flags == IRQF_TRIGGER_NONE)
+			irq_flags = IRQF_TRIGGER_FALLING;
+		irq_flags |= IRQF_ONESHOT;
 
-	error = devm_request_threaded_irq(&client->dev, client->irq,
-					NULL, edt_ft5x06_ts_isr, irq_flags,
-					client->name, tsdata);
-	if (error) {
-		dev_err(&client->dev, "Unable to request touchscreen IRQ.\n");
-		return error;
+		error = devm_request_threaded_irq(&client->dev, client->irq,
+						  NULL, edt_ft5x06_ts_isr,
+						  irq_flags, client->name,
+						  tsdata);
+		if (error) {
+			dev_err(&client->dev, "Unable to request touchscreen IRQ.\n");
+			return error;
+		}
+	} else {
+		INIT_WORK(&tsdata->work_i2c_poll,
+			  edt_ft5x06_ts_work_i2c_poll);
+		timer_setup(&tsdata->timer, edt_ft5x06_ts_irq_poll_timer, 0);
+		tsdata->timer.expires = jiffies +
+					msecs_to_jiffies(POLL_INTERVAL_MS);
+		add_timer(&tsdata->timer);
 	}
 
 	error = devm_device_add_group(&client->dev, &edt_ft5x06_attr_group);

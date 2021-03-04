@@ -188,7 +188,7 @@ static const struct drm_ioctl_desc v3d_drm_ioctls[] = {
 	DRM_IOCTL_DEF_DRV(V3D_SUBMIT_CSD, v3d_submit_csd_ioctl, DRM_RENDER_ALLOW | DRM_AUTH),
 };
 
-static struct drm_driver v3d_drm_driver = {
+static const struct drm_driver v3d_drm_driver = {
 	.driver_features = (DRIVER_GEM |
 			    DRIVER_RENDER |
 			    DRIVER_SYNCOBJ),
@@ -369,18 +369,7 @@ static struct platform_driver v3d_platform_driver = {
 	},
 };
 
-static int __init v3d_drm_register(void)
-{
-	return platform_driver_register(&v3d_platform_driver);
-}
-
-static void __exit v3d_drm_unregister(void)
-{
-	platform_driver_unregister(&v3d_platform_driver);
-}
-
-module_init(v3d_drm_register);
-module_exit(v3d_drm_unregister);
+module_platform_driver(v3d_platform_driver);
 
 MODULE_ALIAS("platform:v3d-drm");
 MODULE_DESCRIPTION("Broadcom V3D DRM Driver");

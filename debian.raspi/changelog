@@ -1,3 +1,1098 @@
+linux-raspi (5.11.0-1003.3) hirsute; urgency=medium
+
+  * hirsute/linux-raspi: 5.11.0-1003.3 -proposed tracker (LP: #1917734)
+
+  * Packaging resync (LP: #1786013)
+    - [Packaging] update variants
+    - [Packaging] update update.conf
+
+  * Miscellaneous Ubuntu changes
+    - [Packaging] raspi: Initial version of linux-raspi for Hirsute
+    - [Config] raspi: updateconfigs after rebase to Ubuntu-5.11.0-11.12
+    - [Packaging] raspi: Set disable_d_i=true in hooks.mk
+    - [Packaging] raspi: Add dctrl-tools to Build-Depends
+    - [Packaging] raspi: Correctly implement noudeb build profiles
+    - [Packaging] raspi: remove Provides: aufs-dkms
+
+  [ Ubuntu: 5.11.0-11.12 ]
+
+  * hirsute/linux: 5.11.0-11.12 -proposed tracker (LP: #1917335)
+  * Packaging resync (LP: #1786013)
+    - update dkms package versions
+    - [Packaging] update variants
+  * Support no udeb profile (LP: #1916095)
+    - [Packaging] replace custom filter script with dctrl-tools
+    - [Packaging] correctly implement noudeb build profiles.
+  * Miscellaneous Ubuntu changes
+    - [Packaging] dkms-versions -- remove nvidia-graphics-drivers-440-server
+    - [Debian] run ubuntu-regression-suite for linux-unstable
+    - [Packaging] remove Provides: aufs-dkms
+    - [Packaging] Change source package name to linux
+    - [Config] update gcc version in config due to toolchain update
+  * Miscellaneous upstream changes
+    - Revert "UBUNTU: [Config] disable nvidia and nvidia_server builds"
+    - Xen/x86: don't bail early from clear_foreign_p2m_mapping()
+    - Xen/x86: also check kernel mapping in set_foreign_p2m_mapping()
+    - Xen/gntdev: correct dev_bus_addr handling in gntdev_map_grant_pages()
+    - Xen/gntdev: correct error checking in gntdev_map_grant_pages()
+    - xen/arm: don't ignore return errors from set_phys_to_machine
+    - xen-blkback: don't "handle" error by BUG()
+    - xen-netback: don't "handle" error by BUG()
+    - xen-scsiback: don't "handle" error by BUG()
+    - xen-blkback: fix error handling in xen_blkbk_map()
+    - tty: protect tty_write from odd low-level tty disciplines
+    - Bluetooth: btusb: Always fallback to alt 1 for WBS
+    - media: pwc: Use correct device for DMA
+    - bpf: Fix truncation handling for mod32 dst reg wrt zero
+    - HID: make arrays usage and value to be the same
+    - USB: quirks: sort quirk entries
+    - usb: quirks: add quirk to start video capture on ELMO L-12F document camera
+      reliable
+    - ntfs: check for valid standard information attribute
+    - Bluetooth: btusb: Some Qualcomm Bluetooth adapters stop working
+    - arm64: tegra: Add power-domain for Tegra210 HDA
+    - hwmon: (dell-smm) Add XPS 15 L502X to fan control blacklist
+    - KVM: x86: Zap the oldest MMU pages, not the newest
+    - KVM: do not assume PTE is writable after follow_pfn
+    - mm: provide a saner PTE walking API for modules
+    - KVM: Use kvm_pfn_t for local PFN variable in hva_to_pfn_remapped()
+
+ -- Juerg Haefliger <juergh@canonical.com>  Thu, 04 Mar 2021 14:42:19 +0100
+
+linux-raspi (5.11.0-1002.2) hirsute; urgency=medium
+
+  * Initial version of linux-raspi for Hirsute
+
+ -- Juerg Haefliger <juergh@canonical.com>  Wed, 03 Mar 2021 16:21:04 +0100
+
+linux-raspi-unstable (5.11.0-1002.2) hirsute; urgency=medium
+
+  * hirsute/linux-raspi: Upstream raspberrypi patchset 2021-02-18 (LP: #1916721)
+    - spi: bcm2835: Workaround/fix for zero-length transfers
+    - kbuild: Silence unavoidable dtc overlay warnings
+    - Adds the DT-overlays to support Hifiberry AMP100
+    - Enhances the Hifiberry DAC+ driver for Hifiberry AMP100 support
+    - ARM: dts: Declare Pi400 and CM4 have no audio pins
+    - configs: Enable CONFIG_MEDIA_CEC_RC
+    - media: i2c: imx290: Replace V4L2_CID_GAIN with V4L2_CID_ANALOGUE_GAIN
+    - media: i2c: imx290: Fix number of controls in v4l2_ctrl_handler_init
+    - i2c: bcm2835: Handle untimely DONE signal
+    - configs: Add MICREL_PHY=y
+    - Revert "drm/vc4: hdmi: Limit the BCM2711 to the max without scrambling"
+    - Revert "vc4_hdmi: Move hdmi reset to bind"
+    - Revert "drm/vc4: Reading the hotplug register is only valid if no GPIO
+      defined"
+    - Revert "vc4: cec: Restore cec physical address on reconnect"
+    - Revert "vc4_hdmi: Remove cec_available flag as always supported"
+    - Revert "vc4_hdmi: Adjust CEC ref clock based on its input clock"
+    - Revert "vc4_hdmi: Make irq shared"
+    - Revert "vc4_hdmi_regs: Make interrupt mask variant specific"
+    - Revert "vc4_hdmi_regs: Add Intr2 register block"
+    - Revert "vc4_hdmi: Fix register offset when sending longer CEC messages"
+    - Revert "vc4_hdmi: BCM2835 requires a fixed hsm clock for CEC to work"
+    - Revert "vc4_hdmi: Fix up CEC registers"
+    - ARM: bcm: Select BRCMSTB_L2_IRQ for bcm2835
+    - drm/vc4: hdmi: Move hdmi reset to bind
+    - drm/vc4: hdmi: Fix register offset with longer CEC messages
+    - drm/vc4: hdmi: Fix up CEC registers
+    - drm/vc4: hdmi: Restore cec physical address on reconnect
+    - drm/vc4: hdmi: Compute the CEC clock divider from the clock rate
+    - drm/vc4: hdmi: Update the CEC clock divider on HSM rate change
+    - drm/vc4: hdmi: Introduce a CEC clock
+    - drm/vc4: hdmi: Split the interrupt handlers
+    - drm/vc4: hdmi: Support BCM2711 CEC interrupt setup
+    - drm/vc4: hdmi: Remove cec_available flag
+    - drm/vc4: hdmi: Don't register the CEC adapter if there's no interrupts
+    - dt-binding: display: bcm2711-hdmi: Add CEC and hotplug interrupts
+    - ARM: dts: bcm2711: Add the BSC interrupt controller
+    - ARM: dts: bcm2711: Add the CEC interrupt controller
+    - bcm2711: Disable bsc_intr and aon_intr by default and enable in overlay
+    - bcm2711: Remove old GIC interrupt
+    - w1: w1_therm: Fix conversion result for negative temperatures
+    - staging:bcm2835-camera: Fix the cherry-pick of AWB Greyworld
+    - Overlays for PiFi-Mini amp
+    - Added PiFi-Mini to rpi-simple-soundcard.c
+    - Hifiberry DAC+ADC Pro fix for the PLL when changing sample rates
+    - bcm2835-isp: Allow formats with different colour spaces.
+    - Fixed picture line bug in all ov9281 modes
+    - Added hflip and vflip controls to ov9281
+    - Partial revert "bcm2711: Disable bsc_intr and aon_intr by default and enable
+      in overlay"
+    - Revert "ARM: dts: bcm2711: Add the BSC interrupt controller"
+    - gpio-fsm: Rename 'num-soft-gpios' to avoid warning
+    - overlays: Rename gpio-fsm property num-soft-gpios
+    - drm: fix HDR static metadata type field numbering
+    - drm/vc4: Add HDR metadata property to the VC5 HDMI connectors
+    - drm/vc4: Add connector check to trigger mode_change when hdr metadata
+      changes
+    - staging: rpivid: Fix crash when CMA alloc fails
+    - dt: Add option for dpi without DE and PCLK (for VGA666)
+    - defconfigs: Add DRM_DISPLAY_CONNECTOR and DRM_SIMPLE_BRIDGE for VGA666
+    - dtoverlays: Add an overlay for the VGA666 when used with vc4-kms-v3d
+    - drm/vc4: Change the default DPI format to being 18bpp, not 24.
+    - gpio-fsm: Show state info in /sys/class/gpio-fsm
+    - gpio-fsm: Fix shutdown timeout handling
+    - overlays: fsm-demo: Ensure all LEDs are turned off
+    - configs: Add various missing IPV6 modules
+    - [Config] raspi: updateconfigs after update to rpi-5.11.y (2021-02-18)
+
+  * Please trust Canonical Livepatch Service kmod signing key (LP: #1898716)
+    - [Config] raspi: enable CONFIG_MODVERSIONS=y
+    - [Packaging] raspi: build canonical-certs.pem from branch/arch certs
+
+  * Packaging resync (LP: #1786013)
+    - [Packaging] update variants
+
+  * Miscellaneous Ubuntu changes
+    - [Config] raspi: updateconfigs after rebase to Ubuntu-unstable-5.11.0-10.11
+    - [Packaging] raspi: Update etc/getabis for linux-raspi-unstable
+
+  [ Ubuntu: 5.11.0-10.11 ]
+
+  * Packaging resync (LP: #1786013)
+    - [Packaging] update variants
+  * Support CML-S CPU + TGP PCH (LP: #1909457)
+    - drm/i915/rkl: new rkl ddc map for different PCH
+    - SAUCE: drm/i915/gen9_bc : Add TGP PCH support
+  * Use DCPD to control HP DreamColor panel (LP: #1911001)
+    - SAUCE: drm/dp: Another HP DreamColor panel brigntness fix
+  * Update nvidia dkms build for module linker script changes
+    - [Packaging] build-dkms--nvidia-N -- Update for preprocessed module linker
+      script
+  * Please trust Canonical Livepatch Service kmod signing key (LP: #1898716)
+    - [Config] enable CONFIG_MODVERSIONS=y
+    - [Packaging] build canonical-certs.pem from branch/arch certs
+    - [Config] add Canonical Livepatch Service key to SYSTEM_TRUSTED_KEYS
+    - [Config] add ubuntu-drivers key to SYSTEM_TRUSTED_KEYS
+  * Miscellaneous Ubuntu changes
+    - [Config] re-enable nvidia dkms
+    - SAUCE: selftests: memory-hotplug: bump timeout to 10min
+    - [Debian] update-aufs.sh -- Don't apply tmpfs-idr.patch
+    - [Config] Update configs
+    - [Config] disable nvidia and nvidia_server builds
+    - SAUCE: Import aufs driver
+    - [Config] CONFIG_AUFS_FS=n
+    - [Config] refresh annotations file
+    - [Config] set CONFIG_MIPI_I3C_HCI=m consistently
+    - [Config] set CONFIG_PINCTRL_MSM8953=m on armhf generic-lpae
+    - [Packaging] Change source package name to linux-unstable
+    - [Config] update LD_VERSION in config due to toolchain update
+  * Miscellaneous upstream changes
+    - Revert "UBUNTU: SAUCE: tmpfs: Don't use 64-bit inodes by defulat with 32-bit
+      ino_t"
+
+  [ Ubuntu: 5.11.0-9.10 ]
+
+  * Empty entry
+
+  [ Ubuntu: 5.11.0-9.10 ]
+
+  * Packaging resync (LP: #1786013)
+    - update dkms package versions
+  * Miscellaneous Ubuntu changes
+    - [Config] update configs/annotations after rebase to 5.11
+    - zfs-modules.ignore: add zzstd
+  * Rebase to v5.11
+
+  [ Ubuntu: 5.11.0-8.9 ]
+
+  * Missing device id for Intel TGL-H ISH [8086:43fc] in intel-ish-hid driver
+    (LP: #1914543)
+    - SAUCE: HID: intel-ish-hid: ipc: Add Tiger Lake H PCI device ID
+  *  Add support for new Realtek ethernet NIC (LP: #1914604)
+    - r8169: Add support for another RTL8168FP
+  * Miscellaneous Ubuntu changes
+    - SAUCE: tmpfs: Don't use 64-bit inodes by defulat with 32-bit ino_t
+    - [Config] Set CONFIG_TMPFS_INODE64=n for s390x
+    - [Config] re-enable ZFS
+  * Rebase to v5.11-rc7
+
+ -- Juerg Haefliger <juergh@canonical.com>  Wed, 24 Feb 2021 11:26:56 +0100
+
+linux-raspi-unstable (5.11.0-1001.1) hirsute; urgency=medium
+
+  * Large Page support disabled on Raspberry Pi kernels (LP: #1865566)
+    - [Config] raspi: arm64: Set TRANSPARENT_HUGEPAGE=y
+
+  * linux-raspi: Bump max number of CPUs (LP: #1914033)
+    - [Config] raspi: arm64: Set NR_CPUS=256
+
+  * Disable unsupported features (LP: #1914009)
+    - [Config] raspi: Disable HIBERNATION, HOTPLUG_CPU and SUSPEND
+
+  * change kconfig of the soundwire bus driver from y to m (LP: #1855685)
+    - [Config] raspi: Set SOUNDWIRE=m
+
+  * lowlatency kernel is lacking support for latencytop (LP: #1655986)
+    - [Config] raspi: Disable LATENCYTOP
+
+  * Re-enable memory cgroups (LP: #1900663)
+    - Revert "cgroup: Disable cgroup "memory" by default"
+
+  * linux-raspi: Build compressed arm64 kernel images (LP: #1914013)
+    - [Packaging] raspi: Build compressed arm64 kernel images
+
+  * dtoverlay=uart4 breaks Raspberry Pi 4B boot (LP: #1875454)
+    - SAUCE: arm: dts: Add 'brcm,bcm2835-pl011' compatible for uart2-5
+
+  * hirsute/linux-raspi: Upstream raspberrypi patchset 2021-01-23 (LP: #1914015)
+    - arm: partially revert 702b94bff3c50542a6e4ab9a4f4cef093262fe65
+    - Revert "rtc: pcf8523: properly handle oscillator stop bit"
+    - Revert "staging: bcm2835-audio: Drop DT dependency"
+    - Revert "spi: spidev: Fix CS polarity if GPIO descriptors are used"
+    - Revert "mailbox: avoid timer start from callback"
+    - smsx95xx: fix crimes against truesize
+    - smsc95xx: Experimental: Enable turbo_mode and packetsize=2560 by default
+    - Allow mac address to be set in smsc95xx
+    - Protect __release_resource against resources without parents
+    - irq-bcm2836: Avoid "Invalid trigger warning"
+    - irqchip: bcm2835: Add FIQ support
+    - irqchip: irq-bcm2835: Add 2836 FIQ support
+    - spi: spidev: Completely disable the spidev warning
+    - dmaengine: bcm2835: Load driver early and support legacy API
+    - firmware: Updated mailbox header
+    - rtc: Add SPI alias for pcf2123 driver
+    - watchdog: bcm2835: Support setting reboot partition
+    - reboot: Use power off rather than busy spinning when halt is requested
+    - bcm: Make RASPBERRYPI_POWER depend on PM
+    - Register the clocks early during the boot process, so that special/critical
+      clocks can get enabled early on in the boot process avoiding the risk of
+      disabling a clock, pll_divider or pll when a claiming driver fails to
+      install propperly - maybe it needs to defer.
+    - bcm2835-rng: Avoid initialising if already enabled
+    - clk-bcm2835: Mark used PLLs and dividers CRITICAL
+    - clk-bcm2835: Add claim-clocks property
+    - clk-bcm2835: Read max core clock from firmware
+    - sound: Demote deferral errors to INFO level
+    - Update vfpmodule.c
+    - i2c: bcm2835: Add debug support
+    - mm: Remove the PFN busy warning
+    - irqchip: irq-bcm2836: Remove regmap and syscon use
+    - lan78xx: Enable LEDs and auto-negotiation
+    - amba_pl011: Don't use DT aliases for numbering
+    - amba_pl011: Round input clock up
+    - amba_pl011: Insert mb() for correct FIFO handling
+    - amba_pl011: Add cts-event-workaround DT property
+    - tty: amba-pl011: Make TX optimisation conditional
+    - tty: amba-pl011: Add un/throttle support
+    - tty: amba-pl011: Avoid rare write-when-full error
+    - pinctrl-bcm2835: Set base to 0 give expected gpio numbering
+    - Main bcm2708/bcm2709 linux port
+    - bcm2708 framebuffer driver
+    - Pulled in the multi frame buffer support from the Pi3 repo
+    - fbdev: add FBIOCOPYAREA ioctl
+    - Speed up console framebuffer imageblit function
+    - dmaengine: Add support for BCM2708
+    - MMC: added alternative MMC driver
+    - Adding bcm2835-sdhost driver, and an overlay to enable it
+    - vc_mem: Add vc_mem driver for querying firmware memory addresses
+    - Add /dev/gpiomem device for rootless user GPIO access
+    - Add SMI driver
+    - Add Chris Boot's i2c driver
+    - char: broadcom: Add vcio module
+    - firmware: bcm2835: Support ARCH_BCM270x
+    - BCM2708: Add core Device Tree support
+    - BCM270x_DT: Add pwr_led, and the required "input" trigger
+    - Added Device IDs for August DVB-T 205
+    - Improve __copy_to_user and __copy_from_user performance
+    - gpio-poweroff: Allow it to work on Raspberry Pi
+    - mfd: Add Raspberry Pi Sense HAT core driver
+    - Add support for all the downstream rpi sound card drivers
+    - Fixes a problem when module probes before i2c module is available
+    - rpi_display: add backlight driver and overlay
+    - bcm2835-virtgpio: Virtual GPIO driver
+    - OF: DT-Overlay configfs interface
+    - brcm: adds support for BCM43341 wifi
+    - hci_h5: Don't send conf_req when ACTIVE
+    - config: Add default configs
+    - ARM64: Round-Robin dispatch IRQs between CPUs.
+    - ARM64: Force hardware emulation of deprecated instructions.
+    - cache: export clean and invalidate
+    - AXI performance monitor driver (#2222)
+    - cgroup: Disable cgroup "memory" by default
+    - ARM: bcm2835: Set Serial number and Revision
+    - dwc-otg: FIQ: Fix "bad mode in data abort handler"
+    - ARM: Activate FIQs to avoid __irq_startup warnings
+    - raspberrypi-firmware: Export the general transaction function.
+    - i2c-gpio: Also set bus numbers from reg property
+    - added capture_clear option to pps-gpio via dtoverlay (#2433)
+    - lan78xx: Read initial EEE status from DT
+    - hid: Reduce default mouse polling interval to 60Hz
+    - Add ability to export gpio used by gpio-poweroff
+    - firmware/raspberrypi: Notify firmware of a reboot
+    - irqchip: irq-bcm2835: Calc. FIQ_START at boot-time
+    - of: configfs: Use of_overlay_fdt_apply API call
+    - net: lan78xx: Disable TCP Segmentation Offload (TSO)
+    - brcmfmac: Re-enable firmware roaming support
+    - lan78xx: Move enabling of EEE into PHY init code
+    - Add rpi-poe-fan driver
+    - cxd2880: CXD2880_SPI_DRV should select DVB_CXD2880 with
+      MEDIA_SUBDRV_AUTOSELECT
+    - hwmon: raspberrypi: Prevent voltage low warnings from filling log
+    - firmware: raspberrypi: Add backward compatible get_throttled
+    - sc16is7xx: Don't spin if no data received
+    - drivers: thermal: step_wise: add support for hysteresis
+    - drivers: thermal: step_wise: avoid throttling at hysteresis temperature
+      after dropping below it
+    - Update issue templates (#2736)
+    - net: lan78xx: Support auto-downshift to 100Mb/s
+    - firmware: raspberrypi: Report the fw variant during probe
+    - lan78xx: Debounce link events to minimize poll storm
+    - lan78xx: EEE support is now a PHY property
+    - bcm2835-dma: Add support for per-channel flags
+    - rtc: rv3028: Add backup switchover mode support
+    - lan78xx: use default alignment for rx buffers
+    - media: ov5647: Add set_fmt and get_fmt calls.
+    - media: ov5647: Add support for PWDN GPIO.
+    - media: ov5647: Add support for non-continuous clock mode
+    - media: tc358743: Increase FIFO level to 374.
+    - media: tc358743: fix connected/active CSI-2 lane reporting
+    - media: tc358743: Add support for 972Mbit/s link freq.
+    - media: tc358743: Check I2C succeeded during probe.
+    - media: adv7180: Default to the first valid input
+    - media: adv7180: Add YPrPb support for ADV7282M
+    - media: videodev2: Add helper defines for printing FOURCCs
+    - dt-bindings: Document BCM283x CSI2/CCP2 receiver
+    - MAINTAINERS: Add entry for BCM2835 Unicam driver
+    - media: tc358743: Return an appropriate colorspace from tc358743_set_fmt
+    - staging: mmal-vchiq: Avoid use of bool in structures
+    - staging: mmal-vchiq: Add support for event callbacks.
+    - staging: vc04_services: Support sending data to MMAL ports
+    - media: videobuf2: Allow exporting of a struct dmabuf
+    - staging: mmal-vchiq: Fix client_component for 64 bit kernel
+    - clk: clk-bcm2835: Use %zd when printing size_t
+    - media: ov5647: Use gpiod_set_value_cansleep
+    - staging: mmal_vchiq: Add in the Bayer encoding formats
+    - staging: mmal-vchiq: Update mmal_parameters.h with recently defined params
+    - staging: mmal-vchiq: Free the event context for control ports
+    - staging: mmal-vchiq: Fix memory leak in error path
+    - w1: w1-gpio: Make GPIO an output for strong pullup
+    - arm: bcm2835: Fix FIQ early ioremap
+    - arm: bcm2835: DMA can only address 1GB
+    - hwrng: iproc-rng200: Add BCM2838 support
+    - mmc: sdhci-iproc: Fix vmmc regulators on iProc
+    - vchiq: Add 36-bit address support
+    - bcm2835-pcm.c: Support multichannel audio
+    - bcmgenet: constrain max DMA burst length
+    - bcmgenet: Better coalescing parameter defaults
+    - net: genet: enable link energy detect powerdown for external PHYs
+    - usb: xhci: Disable the XHCI 5 second timeout
+    - spi: bcm2835: enable shared interrupt support
+    - clk-bcm2835: Don't wait for pllh lock
+    - soc: bcm: bcm2835-pm: Add support for 2711.
+    - clk: bcm2835: Add support for setting leaf clock rates while running.
+    - clk: bcm2835: Allow reparenting leaf clocks while they're running.
+    - usb: add plumbing for updating interrupt endpoint interval state
+    - xhci: implement xhci_fixup_endpoint for interval adjustments
+    - usbhid: call usb_fixup_endpoint after mangling intervals
+    - arm: bcm2835: Add bcm2838 compatible string.
+    - drm/v3d: Add support for 2711.
+    - drm/v3d: Skip MMU flush if the device is currently off.
+    - drm/v3d: Hook up the runtime PM ops.
+    - xhci: add quirk for host controllers that don't update endpoint DCS
+    - i2c: bcm2835: Set clock-stretch timeout to 35ms
+    - clk-bcm2835: Avoid null pointer exception
+    - drm/v3d: HACK: gut runtime pm for now.
+    - drm/v3d: Clock V3D down when not in use.
+    - drivers: char: add chardev for mmap'ing the RPiVid control registers
+    - hid: usb: Add device quirks for Freeway Airmouse T3 and MX3
+    - Add HDMI1 facility to the driver.
+    - net: bcmgenet: Workaround #2 for Pi4 Ethernet fail
+    - xhci: Use more event ring segment table entries
+    - configs: arm64/bcm2711: Enable V3D
+    - arch/arm: Add model string to cpuinfo
+    - arch/arm64: Add Revision, Serial, Model to cpuinfo
+    - media: dt-bindings: Add binding for the Sony IMX219 sensor
+    - v4l2: Add a Greyworld AWB mode.
+    - staging: bcm2835-camera: Add greyworld AWB mode
+    - drm/v3d: Delete pm_runtime support
+    - kbuild: Allow .dtbo overlays to be built piecemeal
+    - ARM: bcm: Switch board, clk and pinctrl to bcm2711 compatible
+    - Rename HDMI ALSA device names, check for enable state
+    - dt-bindings: Add binding for the Infineon IRS1125 sensor
+    - media: i2c: Add a driver for the Infineon IRS1125 depth sensor
+    - drm/v3d: Don't clear MMU control bits on exception
+    - drm/v3d: Suppress all but the first MMU error
+    - drm/v3d: Plug dma_fence leak
+    - staging: vchiq_arm: Register vcsm-cma as a platform driver
+    - staging: vchiq_arm: Register bcm2835-codec as a platform driver
+    - net: bcmgenet: The second IRQ is optional
+    - net:phy:2711 Allow ethernet LED mode to be set via device tree
+    - net:phy:2711 Change the default ethernet LED actions
+    - v3d_drv: Handle missing clock more gracefully
+    - v3d_gem: Kick the clock so firmware knows we are using firmware clock
+      interface
+    - clk-raspberrypi: Allow cpufreq driver to also adjust gpu clocks
+    - clk-bcm2835: Disable v3d clock
+    - drm/v3d: Set dma_mask as well as coherent_dma_mask
+    - staging: vchiq_arm: Set up dma ranges on child devices
+    - staging: vchiq: Use the old dma controller for OF config on platform devices
+    - ARM: bcm: Backport BCM2711 support from upstream
+    - Initialise rpi-firmware before clk-bcm2835
+    - staging: vchiq_arm: Give vchiq children DT nodes
+    - pinctrl: bcm2835: Remove gpiochip on error
+    - pinctrl: bcm2835: Change init order for gpio hogs
+    - pinctrl: bcm2835: Accept fewer than expected IRQs
+    - drivers: char: vcio: Use common compat header
+    - video: fbdev: bcm2708_fb: Use common compat header
+    - of: overlay: Correct symbol path fixups
+    - dt-bindings: pci: Add DT docs for Brcmstb PCIe device
+    - Kbuild: Allow .dtbo overlays to be built, adjust.
+    - bcmgenet: Disable skip_umac_reset by default
+    - drm/fourcc: Add packed 10bit YUV 4:2:0 format
+    - media: uapi: hevc: Add scaling matrix control
+    - media: uapi: hevc: Add segment address field
+    - media: hevc_ctrls: Add slice param dependent slice segment
+    - media: uapi: Add hevc ctrls for WPP decoding
+    - media: videodev2.h: Add a format for column YUV4:2:0 modes
+    - media: v4l2-mem2mem: allow request job buffer processing after job finish
+    - media: dt-bindings: media: Add binding for the Raspberry PI HEVC decoder
+    - staging: media: Add Raspberry Pi V4L2 H265 decoder
+    - mmc: sdhci: Silence MMC warnings
+    - dt-bindings: clock: Add a binding for the RPi Firmware clocks
+    - dt-bindings: display: vc4: hdmi: Add BCM2711 HDMI controllers bindings
+    - drm: Checking of the pitch is only valid for linear formats
+    - driver: char: rpivid: Remove legacy name support
+    - spi: Force CS_HIGH if GPIO descriptors are used
+    - driver: char: rpivid: Don't map more than wanted
+    - media: uapi: v4l2-core: Add sensor ancillary data V4L2 foucc type.
+    - media: uapi: Add MEDIA_BUS_FMT_SENSOR_DATA media bus format
+    - media: imx219: Advertise embedded data node on media pad 1
+    - media: uapi: v4l2-core: Add ISP statistics output V4L2 fourcc type
+    - media: uapi: v4l-ctrls: Add CID base for the bcm2835-isp driver
+    - staging: vchiq: Load bcm2835_isp driver from vchiq
+    - bcm2835-dma: Add proper 40-bit DMA support
+    - media: ov5647: Fix return codes from ov5647_write/ov5647_read functions.
+    - media: ov5647: Add basic support for multiple sensor modes.
+    - media: ov5647: Add V4L2 controls for analogue gain, exposure and AWB
+    - media: ov5647: Add extra 10-bit sensor modes.
+    - media: ov5647: change defaults to better match raw camera applications.
+    - media: i2c: ov5647: Add support for g_selection to reflect cropping/binning
+    - media: i2c: ov5467: Fixup error path to release mutex
+    - media: i2c: ov5647: Support V4L2_CID_PIXEL_RATE
+    - media: i2c: ov5647: Set V4L2_SUBDEV_FL_HAS_EVENTS flag
+    - media: i2c: ov5647: Add support for V4L2_CID_VBLANK
+    - media: i2c: ov5647: Neither analogue gain nor exposure need EXECUTE_ON_WRITE
+    - media: i2c: ov5647: Use member names in mode tables
+    - media: i2c: ov5647: Advertise the correct exposure range
+    - media: i2c: tc358743: Fix fallthrough warning
+    - video: bcm2708_fb: Disable FB if no displays found
+    - dt-bindings: media: i2c: Add IMX477 CMOS sensor binding
+    - sc16is7xx: Fix for hardware flow control
+    - staging: vc04_services: mmal-vchiq: Update parameters list
+    - staging:vc04_services: bcm2835-camera: Request headers with I-frame
+    - zswap: Defer zswap initialisation
+    - SQUASH: pinctrl: bcm2835: Set base for bcm2711 GPIO to 0
+    - staging: vchiq_arm: Clean up 40-bit DMA support
+    - brcmfmac: BCM43436 needs dedicated firmware
+    - snd_bcm2835: disable HDMI audio when vc4 is used (#3640)
+    - gpiolib: Don't prevent IRQ usage of output GPIOs
+    - PCI: brcmstb: Add DT property to control L1SS
+    - media: irs1125: Using i2c_transfer for ic2 reads
+    - media: irs1125: Refactoring and debug messages
+    - media: irs1125: Atomic access to imager reconfiguration
+    - media: irs1125: Keep HW in sync after imager reset
+    - staging: bcm2835-audio: Add missing MODULE_ALIAS
+    - brcmfmac: Prefer a ccode from OTP over nvram file
+    - media: bcm2835-unicam: Driver for CCP2/CSI2 camera interface
+    - media: bcm2835-unicam: Add support for get_mbus_config to set num lanes
+    - media: bcm2835-unicam: Avoid gcc warning over {0} on endpoint
+    - media: i2c: imx290: set the format before VIDIOC_SUBDEV_G_FMT is called
+    - media: i2c: imx290: Add support for 74.25MHz clock
+    - media: i2c: imx290: Correct range for V4L2_CID_GAIN to 0-238
+    - media: i2c: imx290: Convert HMAX setting into V4L2_CID_HBLANK
+    - media: i2c: imx290: Add support for V4L2_CID_VBLANK
+    - media: i2c: imx290: Add exposure control to the driver.
+    - media: i2c: imx290: Add H and V flip controls
+    - media: dt-bindings: media: i2c: Add mono version to IMX290 bindings
+    - media : i2c: imx290: Add support for the mono sensor variant.
+    - media: i2c: imx290: Switch set_hmax to use imx290_write_buffered_reg
+    - serial: 8250: bcm2835aux - defer if clock is zero
+    - media: Add a pixel format for MIPI packed 12bit luma only.
+    - media: Add a pixel format for MIPI packed 14bit luma only.
+    - media: bcm2835-unicam: Add support for 12bit mono packed format
+    - media: bcm2835-unicam: Add support for 14bit mono sources
+    - media: bcm2835-unicam: Add support for unpacked 14bit Bayer formats
+    - bcm2835-dma: Add NO_WAIT_RESP flag
+    - media: i2c: add ov9281 driver.
+    - media: i2c: ov9281: fix mclk issue when probe multiple camera.
+    - media: i2c: ov9281: add enum_frame_interval function for iq tool 2.2 and
+      hal3
+    - media: i2c: ov9281: Fixup for recent kernel releases, and remove custom code
+    - media: i2c: ov9281: Read chip ID via 2 reads
+    - media: i2c: imx290: Explicitly set v&h blank on mode change
+    - media: i2c: imx290: Add support for g_selection to report cropping
+    - media: i2c: imx290: Set the colorspace fields in the format
+    - media: bcm2835-unicam: Reinstate V4L2_CAP_READWRITE in the caps
+    - media: bcm2835-unicam: Ensure type is VIDEO_CAPTURE in [g|s]_selection
+    - media: bcm2835: unicam: Set VPU min clock freq to 250Mhz.
+    - dt-bindings: bcm2835-unicam: Update documentation with new clock params
+    - media: i2c: ov5647: Parse and register properties
+    - leds: Add the actpwr trigger
+    - staging: vchiq_arm: children inherit DMA config
+    - bcm2835-dma: Advertise the full DMA range
+    - ARM: proc-v7: Force misalignment of early stmia
+    - media: bcm2835: unicam: Select MEDIA_CONTROLLER and VIDEO_V4L2_SUBDEV_API
+    - staging: media: rpivid: Select MEDIA_CONTROLLER and
+      MEDIA_CONTROLLER_REQUEST_API
+    - media: bcm2835-unicam: Drop WARN on uing direct cache alias
+    - media: i2c: tc358743: Only allow supported pixel fmts in set_fmt
+    - media: i2c: ov9281: Add support for 8 bit readout
+    - bcm2835-mmc: uninitialized_var is no more
+    - dwc_otg: whitelist_table is now productlist_table
+    - vchiq_2835_arm: Implement a DMA pool for small bulk transfers (#2699)
+    - include/firmware: Add enum for RPI_FIRMWARE_FRAMEBUFFER_GET_DISPLAY_ID
+    - vc4_hdmi: BCM2835 requires a fixed hsm clock for CEC to work
+    - vc4_hdmi: Fix register offset when sending longer CEC messages
+    - vc4_hdmi: Fix up CEC registers
+    - vc4_hdmi_regs: Add Intr2 register block
+    - vc4_hdmi_regs: Make interrupt mask variant specific
+    - vc4_hdmi: Make irq shared
+    - vc4_hdmi: Adjust CEC ref clock based on its input clock
+    - vc4_hdmi: Remove cec_available flag as always supported
+    - drm/vc4: Adopt the dma configuration from the HVS or V3D component
+    - vc4_hdmi: Set HD_CTL_WHOLSMP and HD_CTL_CHALIGN_SET
+    - vc4_hdmi: Set HDMI_MAI_FMT
+    - drm/vc4: add iec958 controls to vc4_hdmi
+    - drm/vc4: move setup from hw_params to prepare
+    - drm/vc4: enable HBR MAI format on HBR streams
+    - vc4_hdmi: Remove firmware logic for MAI threshold setting
+    - vc_hdmi: Set VC4_HDMI_MAI_CONFIG_FORMAT_REVERSE
+    - vc4: Report channel mapping back to userspace
+    - vc4: cec: Restore cec physical address on reconnect
+    - drm/vc4: Add support for DRM_FORMAT_P030 to vc4 planes
+    - drm/vc4: Add support for YUV color encodings and ranges
+    - drm/vc4: Add firmware-kms mode
+    - drm/vc4: Add FKMS as an acceptable node for dma ranges.
+    - media: i2c: Add driver for Sony IMX477 sensor
+    - media: i2c: imx477: Add support for adaptive frame control
+    - media: i2c: imx477: Return correct result on sensor id verification
+    - media: i2c: imx477: Parse and register properties
+    - media: bcm2835-unicam: Always service interrupts
+    - media: bcm2835: unicam: Fix uninitialized warning
+    - media: bcm2835-unicam: Fixup review comments from Hans.
+    - media: bcm2835-unicam: Retain packing information on G_FMT
+    - media: bcm2835-unicam: change minimum number of vb2_queue buffers to 1
+    - staging/fbtft: Add support for display variants
+    - brcmfmac: Increase power saving delay to 2s
+    - rpivid_h265: Fix width/height typo
+    - net: bcmgenet: Reset RBUF on first open
+    - char: Add broadcom char drivers back to build files
+    - USB: gadget: f_hid: avoid crashes and log spam
+    - dwc_otg: initialise sched_frame for periodic QHs that were parked
+    - staging: bcm2835-camera: Replace deprecated V4L2_PIX_FMT_BGR32
+    - staging: vc04_services: Add new vc-sm-cma driver
+    - staging: vchiq-mmal: Add support for 14bit Bayer
+    - staging: mmal-vchiq: Add monochrome image formats
+    - staging: mmal-vchiq: Use vc-sm-cma to support zero copy
+    - staging: vc04_services: Add a V4L2 M2M codec driver
+    - bcm2835-dma: only reserve channel 0 if legacy dma driver is enabled
+    - uapi: bcm2835-isp: Add bcm2835-isp uapi header file
+    - staging: vc04_services: ISP: Add a more complex ISP processing component
+    - drm/vc4: A present but empty dmas disables audio
+    - drm/vc4: Add debugfs node that dumps the current display lists
+    - gpio: Add gpio-fsm driver
+    - drm/vc4: Reading the hotplug register is only valid if no GPIO defined
+    - drm/vc4: Add all the HDMI registers into the debugfs dumps
+    - drm/vc4: Add the 2711 HVS as a suitable DMA node
+    - xhci: quirks: add link TRB quirk for VL805
+    - staging: bcm2835-audio: Add disable-headphones flag
+    - rpisense-fb: Set pseudo_pallete to prevent crash on fbcon takeover
+    - dwc_otg: Minimise header and fix build warnings
+    - gpio-fsm: Fix a build warning
+    - rpivid_h625: Fix build warnings
+    - bcm2708_fb: Fix a build warning
+    - PiFi-40 driver, Makefile and Kconfig
+    - bcm2835-pcm: Fix up multichannel pcm audio
+    - watchdog: bcm2835: Ignore params after the partition number
+    - firmware: raspberrypi: Add support for tryonce reboot flag
+    - phy: broadcom: split out the BCM54213PE from the BCM54210E IDs
+    - phy: broadcom: Add bcm54213pe configuration
+    - vc4_hdmi: Report that 3d/stereo is allowed
+    - PCI: brcmstb: Restore initial fundamental reset
+    - vc4: Clear unused infoframe packet RAM registers
+    - Input: edt-ft5x06: Poll the device if no interrupt is configured.
+    - drm/panel/raspberrypi-touchscreen: Use independent I2C actions with delay.
+    - drm/panel/raspberrypi-ts: Insert delay before polling for startup state
+    - media: ov9281: Add 1280x720 and 640x480 modes
+    - drm/vc4: Add support for DSI0
+    - dt-bindings: Add compatible for BCM2711 DSI1
+    - drm/vc4: Add configuration for BCM2711 DSI1.
+    - vc4_hdmi: Move hdmi reset to bind
+    - drm/vc4: Correct DSI register definition
+    - Allo boss2 driver
+    - media: bcm2835-unicam: Correctly handle error propagation for stream on
+    - media: bcm2835-unicam: Return early from stop_streaming() if stopped
+    - media: bcm2835-unicam: Clear clock state when stopping streaming
+    - PCI: brcmstb: Advertise MSI-X support
+    - net: lan78xx: Ack pending PHY ints when resetting
+    - media: i2c: imx477: Selection compliance fixes
+    - drm/atomic: Pass the full state to CRTC atomic enable/disable
+    - drm/vc4: hvs: Align the HVS atomic hooks to the new API
+    - drm/vc4: Pass the atomic state to encoder hooks
+    - drm/vc4: hdmi: Take into account the clock doubling flag in atomic_check
+    - drm/vc4: hdmi: Don't access the connector state in reset if kmalloc fails
+    - drm/vc4: hdmi: Create a custom connector state
+    - drm/vc4: hdmi: Store pixel frequency in the connector state
+    - drm/vc4: hdmi: Use the connector state pixel rate for the PHY
+    - drm/vc4: hdmi: Limit the BCM2711 to the max without scrambling
+    - drm/vc4: hdmi: Enable 10/12 bpc output
+    - staging: vchiq: Fix bulk userdata handling
+    - vc-sm-cma: fixed kbuild problem
+    - staging: vchiq: Fix bulk transfers on 64-bit builds
+    - staging/mmal-vchiq: Fix incorrect static vchiq_instance.
+    - staging/vc04_services: Add additional unpacked raw formats
+    - staging/bcm2835-codec: Add the unpacked (16bpp) raw formats
+    - staging/bcm2835-codec: Log the number of excess supported formats
+    - staging/bcm2835-isp: Add the unpacked (16bpp) raw formats
+    - staging/bcm2835-isp: Log the number of excess supported formats
+    - dts: Enable DMA_WIDE_SOURCE for hdmi audio dma
+    - bcm2835-dma: Avoid losing CS flags after interrupt
+    - bcm2711-rpi.dtsi: Bump hdmi audio dma priority to max
+    - media: i2c: ov5647: Selection compliance fixes
+    - overlays: give Seeed Studio CAN BUS FD HAT a -v2 postfix
+    - overlays: Add overlay for Seeed Studio CAN BUS FD HAT v1 (based on
+      mcp2517fd)
+    - overlays: add wm8960-soundcard overlay
+    - overlays: add spi override to merus-amp overlay
+    - arch/arm: Add __memset alias to memset_rpi.S
+    - dt: Add a camera regulator node to all downstream Pi platforms
+    - dtoverlays: Update sensor overlays to use cam1_reg where possible
+    - overlays: seeed-can-fd-hat: clarify how to identify HAT version
+    - configs: Enable BCM2835 thermal driver in kernel8
+    - dt: Enable DMA_WIDE_SOURCE and DMA_WIDE_DEST for hdmi audio
+    - bcm2835-dma: Add bcm2835-dma: Add DMA_WIDE_SOURCE and DMA_WIDE_DEST flags
+    - uapi: bcm2835-isp: Add colour denoise configuration
+    - staging: vc04_services: ISP: Add colour denoise control
+    - configs: Add CONFIG_NETFILTER_XT_MATCH_PHYSDEV=m
+    - configs: Add CONFIG_USB_NET_AQC111=m
+    - dt-bindings: nvmem: Add bindings for rmem driver
+    - nvmem: Add driver to expose reserved memory as nvmem
+    - ARM: dts: bcm2711: Add reserved memory template to hold firmware
+      configuration
+    - arm64: defconfig: Enable nvmem's rmem driver
+    - ARM: multi_v7_defconfig: Enable nvmem's rmem driver
+    - configs: Add NVMEM_RMEM=m for 2711
+    - configs: Regenerate defconfigs
+    - configs: Add CRYPTO_ADIANTUM=m
+    - [Config] raspi: updateconfigs after update to rpi-5.11.y (2021-01-23)
+
+  * IO errors when writing large amounts of data to USB storage in eoan on
+    RPI2/3 (armhf kernel) (LP: #1852510) // hirsute/linux-raspi: Upstream
+    raspberrypi patchset 2021-01-23 (LP: #1914015)
+    - Add dwc_otg driver
+
+  * Miscellaneous Ubuntu changes
+    - [Packaging] raspi: Initial import of debian.raspi from groovy:linux-raspi
+      (5.8.0-1013.16)
+    - [Packaging] raspi: Initial version of linux-raspi-unstable for Hirsute
+    - SAUCE: arm: dts: Add 'brcm,bcm2835-pl011' compatible for uart0
+    - SAUCE: arm: dts: Add 'brcm,bcm2835-gpio' compatible for gpio
+    - SAUCE: staging: bcm2835-audio: Replace unsafe strcpy() with strscpy()
+
+  [ Ubuntu: 5.11.0-7.8 ]
+
+  * Packaging resync (LP: #1786013)
+    - update dkms package versions
+  *  Boot fails: failed to validate module [nls_iso8859_1] BTF: -22
+    (LP: #1911359)
+    - SAUCE: x86/entry: build thunk_$(BITS) only if CONFIG_PREEMPTION=y
+  * Remove scary stack trace from Realtek WiFi driver (LP: #1913263)
+    - rtw88: reduce the log level for failure of tx report
+  * Fix unexpected AER/DPC on PCH400 and PCH500 (LP: #1913691)
+    - Revert "UBUNTU: SAUCE: PCI: Enable ACS quirk on all CML root ports"
+    - Revert "UBUNTU: SAUCE: PCI: Enable ACS quirk on CML root port"
+    - SAUCE: PCI/AER: Disable AER interrupt during suspend
+    - SAUCE: PCI/DPC: Disable DPC interrupt during suspend
+  * switch to an autogenerated nvidia series based core via dkms-versions
+    (LP: #1912803)
+    - [Packaging] nvidia -- use dkms-versions to define versions built
+    - [Packaging] update-version-dkms -- maintain flags fields
+  * Introduce the new NVIDIA 460-server series and update the 460 series
+    (LP: #1913200)
+    - [Config] dkms-versions -- add the 460-server nvidia driver
+  * Fix the video can't output through WD19TB connected with TGL platform during
+    cold-boot (LP: #1910211)
+    - SAUCE: drm/i915/dp: Prevent setting LTTPR mode if no LTTPR is detected
+  * Stop using get_scalar_status command in Dell AIO uart backlight driver
+    (LP: #1865402)
+    - SAUCE: platform/x86: dell-uart-backlight: add get_display_mode command
+  * Miscellaneous Ubuntu changes
+    - SAUCE: selftests/seccomp: Accept any valid fd in user_notification_addfd
+    - [Packaging] Don't disable CONFIG_DEBUG_INFO in headers packages
+    - [Config] update configs/annotations after rebase to 5.11-rc6
+  * Rebase to v5.11-rc6
+
+  [ Ubuntu: 5.11.0-6.7 ]
+
+  * Packaging resync (LP: #1786013)
+    - update dkms package versions
+  * Prevent thermal shutdown during boot process (LP: #1906168)
+    - thermal/drivers/acpi: Use hot and critical ops
+    - thermal/core: Remove notify ops
+    - thermal: int340x: Fix unexpected shutdown at critical temperature
+    - thermal: intel: pch: Fix unexpected shutdown at critical temperature
+  * riscv: backport support for SiFive Unmatched (LP: #1910965)
+    - RISC-V: Update l2 cache DT documentation to add support for SiFive FU740
+    - RISC-V: sifive_l2_cache: Update L2 cache driver to support SiFive FU740
+    - dt-bindings: riscv: Update DT binding docs to support SiFive FU740 SoC
+    - riscv: dts: add initial support for the SiFive FU740-C000 SoC
+    - dt-bindings: riscv: Update YAML doc to support SiFive HiFive Unmatched board
+    - riscv: dts: add initial board data for the SiFive HiFive Unmatched
+    - PCI: microsemi: Add host driver for Microsemi PCIe controller
+    - Microsemi PCIe expansion board DT entry.
+    - SiFive Unleashed CPUFreq
+    - SiFive HiFive Unleashed: Add PWM LEDs (D1, D2, D3, D4)
+  * initramfs unpacking failed (LP: #1835660)
+    - lib/decompress_unlz4.c: correctly handle zero-padding around initrds.
+  * Miscellaneous Ubuntu changes
+    - [Config] update configs and annotations after rebase to 5.11-rc5
+  * Rebase to v5.11-rc5
+
+  [ Ubuntu: 5.11.0-5.6 ]
+
+  * Packaging resync (LP: #1786013)
+    - update dkms package versions
+  * Miscellaneous Ubuntu changes
+    - [Config] update config and annotations after rebase to 5.11-rc4
+  * Rebase to v5.11-rc4
+
+  [ Ubuntu: 5.11.0-4.5 ]
+
+  *  Boot fails: failed to validate module [nls_iso8859_1] BTF: -22
+    (LP: #1911359)
+    - SAUCE: x86/entry: build thunk_$(BITS) only if CONFIG_PREEMPTION=y
+
+  [ Ubuntu: 5.11.0-3.4 ]
+
+  *  Boot fails: failed to validate module [nls_iso8859_1] BTF: -22
+    (LP: #1911359)
+    - bpf: Allow empty module BTFs
+    - libbpf: Allow loading empty BTFs
+
+  [ Ubuntu: 5.11.0-2.3 ]
+
+  * DMI entry syntax fix for Pegatron / ByteSpeed C15B (LP: #1910639)
+    - Input: i8042 - unbreak Pegatron C15B
+  * SYNA30B4:00 06CB:CE09 Mouse  on HP EliteBook 850 G7 not working at all
+    (LP: #1908992)
+    - HID: multitouch: Enable multi-input for Synaptics pointstick/touchpad device
+  * debian/scripts/file-downloader does not handle positive failures correctly
+    (LP: #1878897)
+    - [Packaging] file-downloader not handling positive failures correctly
+  * Packaging resync (LP: #1786013)
+    - update dkms package versions
+  * CVE-2021-1052 // CVE-2021-1053
+    - [Packaging] NVIDIA -- Add the NVIDIA 460 driver
+  * Miscellaneous Ubuntu changes
+    - [Packaging] Remove nvidia-455 dkms build
+    - SAUCE: ALSA: hda/realtek: fix right sounds and mute/micmute LEDs for HP
+      machines
+    - [Config] update configs and annotations after rebase to 5.11-rc3
+  * Rebase to v5.11-rc3
+
+  [ Ubuntu: 5.11.0-1.2 ]
+
+  * Rebase to v5.11-rc2
+
+  [ Ubuntu: 5.11.0-0.1 ]
+
+  * dep-8 ubuntu-regression-suite tests are not run for all linux-hwe-* kernels
+    (LP: #1908529)
+    - [dep-8] Allow all hwe kernels
+  * Fix reading speed and duplex sysfs on igc device (LP: #1906851)
+    - igc: Report speed and duplex as unknown when device is runtime suspended
+  * rtwpci driver blocks the system to enter PC10, stuck at PC3 (LP: #1907200)
+    - SAUCE: rtw88: 8723de: let cpu enter c10
+  * [21.04 FEAT] Deactivate CONFIG_QETH_OSN kernel config option (LP: #1906370)
+    - [Config] Deactivate CONFIG_QETH_OSN kernel config option
+  * Add dpcd backlight control for 0x4c83 0x4f41 (LP: #1905663)
+    - SAUCE: drm/dp: Add dpcd backlight control for 0x4c83 0x4f41
+  * disable building bpf selftests (LP: #1908144)
+    - SAUCE: selftests/bpf: Clarify build error if no vmlinux
+    - SAUCE: selftests: Skip BPF selftests by default
+    - disable building bpf selftests (no VMLINUX_BTF)
+  * Miscellaneous Ubuntu changes
+    - SAUCE: (lockdown) efi: Add an EFI_SECURE_BOOT flag to indicate secure boot
+      mode
+    - SAUCE: (lockdown) s390: Lock down the kernel when the IPL secure flag is set
+    - [Config] update configs and annotations after rebase to v5.11-rc1
+    - hio: fix build error with kernel 5.11
+    - SAUCE: shiftfs: fix build error with 5.11
+    - [Config] temporarily disable ZFS
+    - check-aliases: do not error if modules.alias does not exist
+    - ppc64el: don't build stripped vdso
+  * Miscellaneous upstream changes
+    - irq: export irq_check_status_bit
+  * Rebase to v5.11-rc1
+
+  [ Ubuntu: 5.11.0-0.0 ]
+
+  * Empty entry
+
+  [ Ubuntu: 5.10.0-9.10 ]
+
+  * Use INTx for Pericom USB controllers (LP: #1906839)
+    - PCI: Disable MSI for Pericom PCIe-USB adapter
+  * disable building bpf selftests (LP: #1908144)
+    - SAUCE: selftests/bpf: clarify build error if no vmlinux
+    - SAUCE: selftests: Skip BPF seftests by default
+    - disable building bpf selftests (no VMLINUX_BTF)
+  * Miscellaneous Ubuntu changes
+    - [Config] Enable CONFIG_BPF_LSM
+  * Miscellaneous upstream changes
+    - Revert "md: change mddev 'chunk_sectors' from int to unsigned"
+    - Revert "dm raid: fix discard limits for raid1 and raid10"
+
+  [ Ubuntu: 5.10.0-8.9 ]
+
+  * Packaging resync (LP: #1786013)
+    - [Packaging] update variants
+  * Fix bpf selftest compilation with clang 11
+    - bpf: Fix selftest compilation on clang 11
+  * Miscellaneous Ubuntu changes
+    - [Config] update configs and annotations after rebase to v5.10
+  * Rebase to v5.10
+
+  [ Ubuntu: 5.10.0-7.8 ]
+
+  * Packaging resync (LP: #1786013)
+    - update dkms package versions
+  * Fix linux-libc-dev build for hirsute forward port kernels (LP: #1904067)
+    - [Debian] Build linux-libc-dev for debian.master* branches
+  * Update kernel packaging to support forward porting kernels (LP: #1902957)
+    - [Debian] Update for leader included in BACKPORT_SUFFIX
+  * Introduce the new NVIDIA 455 series (LP: #1897751)
+    - [Packaging] NVIDIA -- Add signed modules for the 455 driver
+  * 5.10 kernel fails to boot with secure boot disabled (LP: #1904906)
+    - [Config] CONFIG_RCU_SCALE_TEST=n
+  * Miscellaneous Ubuntu changes
+    - [Config] s390x: disable GPIO_CDEV
+    - [Config] ARM_CMN=m
+    - [Config] disable GPIO_CDEV_V1
+    - [Config] Reorder annotations after 5.10-rc6 rebase
+    - [Packaging] Remove nvidia-435 dkms build
+    - [Packaging] Change source package name to linux
+    - [Config] Update configs and annotations after rebase to v5.10-rc7
+    - SAUCE: Revert "mm/filemap: add static for function
+      __add_to_page_cache_locked"
+  * Rebase to v5.10-rc7
+
+  [ Ubuntu: 5.10.0-6.7 ]
+
+  * Empty entry.
+
+  [ Ubuntu: 5.10.0-6.7 ]
+
+  * Packaging resync (LP: #1786013)
+    - update dkms package versions
+  * Avoid double newline when running insertchanges (LP: #1903293)
+    - [Packaging] insertchanges: avoid double newline
+  * Miscellaneous Ubuntu changes
+    - [Packaging]: linux-modules should depend on linux-image
+    - [Packaging]: linux-image should suggest linux-modules-extra
+  * Rebase to v5.10-rc6
+
+  [ Ubuntu: 5.10.0-5.6 ]
+
+  * Miscellaneous Ubuntu changes
+    - [Config] add CONFIG_INFINIBAND_VIRT_DMA
+  * Rebase to v5.10-rc5
+
+  [ Ubuntu: 5.10.0-4.5 ]
+
+  * Packaging resync (LP: #1786013)
+    - update dkms package versions
+  * Miscellaneous Ubuntu changes
+    - [Packaging] reduce the size required to build packages
+  * Rebase to v5.10-rc4
+
+  [ Ubuntu: 5.10.0-3.4 ]
+
+  * Packaging resync (LP: #1786013)
+    - update dkms package versions
+  * e1000e: fix issues with S0ix (LP: #1902687)
+    - SAUCE: e1000e: fix S0ix flow to allow S0i3.2 subset entry
+    - SAUCE: e1000e: allow turning s0ix flows on for systems with ME
+    - SAUCE: e1000e: Add Dell's Comet Lake systems into s0ix heuristics
+    - SAUCE: e1000e: Add more Dell CML systems into s0ix heuristics
+    - [Config] Update CONFIG_E1000E for ppc64el in annotations
+  * perf: Add support for Rocket Lake (LP: #1902004)
+    - SAUCE: perf/x86/intel: Add Rocket Lake CPU support
+    - SAUCE: perf/x86/cstate: Add Rocket Lake CPU support
+    - SAUCE: perf/x86/msr: Add Rocket Lake CPU support
+    - SAUCE: perf/x86/intel/uncore: Add Rocket Lake support
+  * Miscellaneous Ubuntu changes
+    - [Config] Disable CONFIG_CRYPTO_USER_API_ENABLE_OBSOLETE
+    - [Config] update CONFIG_MST_IRQ after rebase to 5.10-rc3
+    - [Config] drop obsolete SND_SST_IPC options
+    - [Config] re-enable ZFS
+  * Rebase to v5.10-rc3
+
+  [ Ubuntu: 5.10.0-2.3 ]
+
+  * Miscellaneous Ubuntu changes
+    - [Config] Switch arm64 default cpufreq governor to ondemand
+    - [Debian] Include scripts/module.lds from builddir in headers package
+
+  [ Ubuntu: 5.10.0-1.2 ]
+
+  * Packaging resync (LP: #1786013)
+    - update dkms package versions
+  * Fix non-working Intel NVMe after S3 (LP: #1900847)
+    - SAUCE: PCI: Enable ACS quirk on all CML root ports
+  * Miscellaneous Ubuntu changes
+    - [Packaging] move to hirsute
+    - [Config] Update configs and annotations after rebase to 5.10-rc2
+    - [Config] Update numerous configs to conform with policy
+    - [Config] Switch default CPUFreq governer for arm64/armhf to schedultil
+    - [Config] Temporarily disable DEBUG_INFO_BTF for armhf
+  * Rebase to v5.10-rc2
+
+  [ Ubuntu: 5.10.0-0.1 ]
+
+  * Packaging resync (LP: #1786013)
+    - update dkms package versions
+  * Miscellaneous Ubuntu changes
+    - [Config] Update configs and annotations for v5.10-rc1
+    - SAUCE: platform/x86: dell-uart-backlight: rename kzfree() to
+      kfree_sensitive()
+    - SAUCE: apparmor: rename kzfree() to kfree_sensitive()
+    - SAUCE: LSM: change ima_read_file() to use lsmblob
+    - SAUCE: LSM: Use lsmblob in smk_netlbl_mls()
+  * Miscellaneous upstream changes
+    - Revert "UBUNTU: [Packaging] Change source package name to linux-5.10"
+    - s390: correct __bootdata / __bootdata_preserved macros
+  * Rebase to v5.10-rc1
+
+  [ Ubuntu: 5.10.0-0.0 ]
+
+  * Empty entry
+
+  [ Ubuntu: 5.9.0-2.3 ]
+
+  * Fix system reboot when disconnecting WiFi (LP: #1899726)
+    - iwlwifi: msix: limit max RX queues for 9000 family
+  * booting linux-generic-lpae armhf kernel under qemu results in relocation out
+    of range, and thus no modules can be loaded (LP: #1899519)
+    - [Config] armhf: ARM_MODULE_PLTS=y
+  * Fix broken MSI interrupt after HDA controller was suspended (LP: #1899586)
+    - ALSA: hda: fix jack detection with Realtek codecs when in D3
+  * CVE-2020-16119
+    - SAUCE: dccp: avoid double free of ccid on child socket
+  * python3-venv is gone (LP: #1896801)
+    - SAUCE: doc: remove python3-venv dependency
+  * *-tools-common packages descriptions have typo "PGKVER" (LP: #1898903)
+    - [Packaging] Fix typo in -tools template s/PGKVER/PKGVER/
+  * Enable brightness control on HP DreamColor panel (LP: #1898865)
+    - SAUCE: drm/i915/dpcd_bl: Skip testing control capability with force DPCD
+      quirk
+    - SAUCE: drm/dp: HP DreamColor panel brigntness fix
+  * HP Zbook Studio G7 boots into corrupted screen with PSR featured panel
+    (LP: #1897501)
+    - SAUCE: drm/i915/psr: allow overriding PSR disable param by quirk
+    - SAUCE: drm/dp: add DP_QUIRK_FORCE_PSR_CHIP_DEFAULT quirk to CMN prod-ID
+      19-15
+  * Fix broken e1000e device after S3 (LP: #1897755)
+    - SAUCE: e1000e: Increase polling timeout on MDIC ready bit
+  * Wakeup the system by touching the touchpad (LP: #1888331)
+    - HID: i2c-hid: Enable wakeup capability from Suspend-to-Idle
+  * Enable LTR for endpoints behind VMD (LP: #1896598)
+    - SAUCE: PCI/ASPM: Enable LTR for endpoints behind VMD
+  * [SRU] [Focal/OEM-5.6/Groovy]Fix AMD usb host controller lost after stress S3
+    (LP: #1893914)
+    - SAUCE: xhci: workaround for S3 issue on AMD SNPS 3.0 xHC
+  * debian/rules editconfigs does not work on s390x to change s390x only configs
+    (LP: #1863116)
+    - [Packaging] kernelconfig -- only update/edit configurations on architectures
+      we have compiler support
+  * Fix non-working NVMe after S3 (LP: #1895718)
+    - SAUCE: PCI: Enable ACS quirk on CML root port
+  * Miscellaneous Ubuntu changes
+    - SAUCE: bpf: Check CONFIG_BPF option for resolve_btfids
+    - SAUCE: tools resolve_btfids: Always force HOSTARCH
+    - packaging: arm64: add a 64KB mem pages flavour called 'generic-64k'
+    - packaging: arm64: generic-64k: skip ABI, modules and retpoline checks
+    - SAUCE: drm/i915/display: Fix null deref in intel_psr_atomic_check()
+    - [Config] Update toolchain versions
+    - [Config] Refresh annotations
+    - Add ubuntu-host module
+    - CONFIG_UBUNTU_HOST=m
+    - SAUCE: apparmor: drop prefixing abs root labels with '='
+    - SAUCE: apparmor: disable showing the mode as part of a secid to secctx
+    - SAUCE: apparmor: rename aa_sock() to aa_unix_sk()
+    - SAUCE: apparmor: LSM stacking: switch from SK_CTX() to aa_sock()
+    - SAUCE: LSM: Infrastructure management of the sock security
+    - SAUCE: LSM: Create and manage the lsmblob data structure.
+    - SAUCE: LSM: Use lsmblob in security_audit_rule_match
+    - SAUCE: LSM: Use lsmblob in security_kernel_act_as
+    - SAUCE: net: Prepare UDS for security module stacking
+    - SAUCE: LSM: Use lsmblob in security_secctx_to_secid
+    - SAUCE: LSM: Use lsmblob in security_secid_to_secctx
+    - SAUCE: LSM: Use lsmblob in security_ipc_getsecid
+    - SAUCE: LSM: Use lsmblob in security_task_getsecid
+    - SAUCE: LSM: Use lsmblob in security_inode_getsecid
+    - SAUCE: LSM: Use lsmblob in security_cred_getsecid
+    - SAUCE: IMA: Change internal interfaces to use lsmblobs
+    - SAUCE: LSM: Specify which LSM to display
+    - SAUCE: LSM: Ensure the correct LSM context releaser
+    - SAUCE: LSM: Use lsmcontext in security_secid_to_secctx
+    - SAUCE: LSM: Use lsmcontext in security_inode_getsecctx
+    - SAUCE: LSM: security_secid_to_secctx in netlink netfilter
+    - SAUCE: NET: Store LSM netlabel data in a lsmblob
+    - SAUCE: LSM: Verify LSM display sanity in binder
+    - SAUCE: Audit: Add new record for multiple process LSM attributes
+    - SAUCE: Audit: Add a new record for multiple object LSM
+    - SAUCE: LSM: Add /proc attr entry for full LSM context
+    - SAUCE: AppArmor: Remove the exclusive flag
+    - SAUCE: Audit: Fix for missing NULL check
+  * Miscellaneous upstream changes
+    - tty: hvcs: Don't NULL tty->driver_data until hvcs_cleanup()
+  * Rebase to v5.9
+
+  [ Ubuntu: 5.9.0-1.2 ]
+
+  * Miscellaneous Ubuntu changes
+    - [Config] Update configs after rebase to 5.9-rc6
+    - SAUCE: dax: Fix compilation for CONFIG_DAX && !CONFIG_FS_DAX
+    - SAUCE: bpf: Use --no-fail option if CONFIG_BPF is not enabled
+    - SAUCE: tools resolve_btfids: Always force HOSTARCH
+  * Rebase to v5.9-rc6
+
+  [ Ubuntu: 5.9.0-0.1 ]
+
+  * Miscellaneous Ubuntu changes
+    - [Config] Update configs and annotations for v5.9-rc1
+    - SAUCE: i915: Fix build error due to missing struct definition
+    - hio -- Update blk_queue_split() calls for changes in 5.9-rc1
+    - hio -- Updates for move of make_request_fn to struct block_device_operations
+    - [Config] Disable zfs dkms build
+    - [Config] Disable nvidia dkms build
+    - [Config] Disable nvidia server dkms builds
+    - SAUCE: remoteproc: qcom: Use div_u64() for 64-bit division
+    - SAUCE: PCI/ASPM: Enable ASPM for links under VMD domain
+    - [Packaging] Bind hv_vss_daemon startup to hv_vss device
+    - [Packaging] bind hv_fcopy_daemon startup to hv_fcopy device
+    - [Config] Re-enable UEFI signing for arm64
+    - SAUCE: Revert "UBUNTU: SAUCE: export __get_vm_area_caller() and map_kernel_range()"
+    - [Config] Set the default CPU governor to ONDEMAND
+    - [Packaging] update variants
+    - [Packaging] update helper scripts
+    - update dkms package versions
+  * Rebase to v5.9-rc5
+
+  [ Ubuntu: 5.9.0-0.0 ]
+
+  * Empty entry
+
+ -- Juerg Haefliger <juergh@canonical.com>  Wed, 10 Feb 2021 14:29:15 +0100
+
+linux-raspi-unstable (5.11.0-1000.0) hirsute; urgency=medium
+
+  * Initial version of linux-raspi-unstable for Hirsute.
+
+ -- Juerg Haefliger <juergh@canonical.com>  Tue, 19 Jan 2021 14:44:46 +0100
+
 linux-raspi (5.8.0-1013.16) groovy; urgency=medium
 
   * groovy/linux-raspi: 5.8.0-1013.16 -proposed tracker (LP: #1911336)

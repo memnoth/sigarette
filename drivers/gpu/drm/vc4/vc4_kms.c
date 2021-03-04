@@ -11,8 +11,6 @@
  * crtc, HDMI encoder).
  */
 
-#include <linux/bitfield.h>
-#include <linux/bitops.h>
 #include <linux/clk.h>
 
 #include <drm/drm_atomic.h>
@@ -22,10 +20,11 @@
 #include <drm/drm_plane_helper.h>
 #include <drm/drm_probe_helper.h>
 #include <drm/drm_vblank.h>
-#include <drm/drm_drv.h>
 
 #include "vc4_drv.h"
 #include "vc4_regs.h"
+
+#define HVS_NUM_CHANNELS 3
 
 struct vc4_ctm_state {
 	struct drm_private_state base;
@@ -36,6 +35,17 @@ struct vc4_ctm_state {
 static struct vc4_ctm_state *to_vc4_ctm_state(struct drm_private_state *priv)
 {
 	return container_of(priv, struct vc4_ctm_state, base);
+}
+
+struct vc4_hvs_state {
+	struct drm_private_state base;
+	unsigned int unassigned_channels;
+};
+
+static struct vc4_hvs_state *
+to_vc4_hvs_state(struct drm_private_state *priv)
+{
+	return container_of(priv, struct vc4_hvs_state, base);
 }
 
 struct vc4_load_tracker_state {
@@ -54,7 +64,7 @@ static struct vc4_ctm_state *vc4_get_ctm_state(struct drm_atomic_state *state,
 					       struct drm_private_obj *manager)
 {
 	struct drm_device *dev = state->dev;
-	struct vc4_dev *vc4 = dev->dev_private;
+	struct vc4_dev *vc4 = to_vc4_dev(dev);
 	struct drm_private_state *priv_state;
 	int ret;
 
@@ -95,6 +105,29 @@ static const struct drm_private_state_funcs vc4_ctm_state_funcs = {
 	.atomic_duplicate_state = vc4_ctm_duplicate_state,
 	.atomic_destroy_state = vc4_ctm_destroy_state,
 };
+
+static void vc4_ctm_obj_fini(struct drm_device *dev, void *unused)
+{
+	struct vc4_dev *vc4 = to_vc4_dev(dev);
+
+	drm_atomic_private_obj_fini(&vc4->ctm_manager);
+}
+
+static int vc4_ctm_obj_init(struct vc4_dev *vc4)
+{
+	struct vc4_ctm_state *ctm_state;
+
+	drm_modeset_lock_init(&vc4->ctm_state_lock);
+
+	ctm_state = kzalloc(sizeof(*ctm_state), GFP_KERNEL);
+	if (!ctm_state)
+		return -ENOMEM;
+
+	drm_atomic_private_obj_init(&vc4->base, &vc4->ctm_manager, &ctm_state->base,
+				    &vc4_ctm_state_funcs);
+
+	return drmm_add_action_or_reset(&vc4->base, vc4_ctm_obj_fini, NULL);
+}
 
 /* Converts a DRM S31.32 value to the HW S0.9 format. */
 static u16 vc4_ctm_s31_32_to_s0_9(u64 in)
@@ -152,15 +185,64 @@ vc4_ctm_commit(struct vc4_dev *vc4, struct drm_atomic_state *state)
 		  VC4_SET_FIELD(ctm_state->fifo, SCALER_OLEDOFFS_DISPFIFO));
 }
 
+static struct vc4_hvs_state *
+vc4_hvs_get_global_state(struct drm_atomic_state *state)
+{
+	struct vc4_dev *vc4 = to_vc4_dev(state->dev);
+	struct drm_private_state *priv_state;
+
+	priv_state = drm_atomic_get_private_obj_state(state, &vc4->hvs_channels);
+	if (IS_ERR(priv_state))
+		return ERR_CAST(priv_state);
+
+	return to_vc4_hvs_state(priv_state);
+}
+
 static void vc4_hvs_pv_muxing_commit(struct vc4_dev *vc4,
 				     struct drm_atomic_state *state)
 {
 	struct drm_crtc_state *crtc_state;
 	struct drm_crtc *crtc;
-	unsigned char dsp2_mux = 0;
-	unsigned char dsp3_mux = 3;
-	unsigned char dsp4_mux = 3;
-	unsigned char dsp5_mux = 3;
+	unsigned int i;
+
+	for_each_new_crtc_in_state(state, crtc, crtc_state, i) {
+		struct vc4_crtc_state *vc4_state = to_vc4_crtc_state(crtc_state);
+		u32 dispctrl;
+		u32 dsp3_mux;
+
+		if (!crtc_state->active)
+			continue;
+
+		if (vc4_state->assigned_channel != 2)
+			continue;
+
+		/*
+		 * SCALER_DISPCTRL_DSP3 = X, where X < 2 means 'connect DSP3 to
+		 * FIFO X'.
+		 * SCALER_DISPCTRL_DSP3 = 3 means 'disable DSP 3'.
+		 *
+		 * DSP3 is connected to FIFO2 unless the transposer is
+		 * enabled. In this case, FIFO 2 is directly accessed by the
+		 * TXP IP, and we need to disable the FIFO2 -> pixelvalve1
+		 * route.
+		 */
+		if (vc4_state->feed_txp)
+			dsp3_mux = VC4_SET_FIELD(3, SCALER_DISPCTRL_DSP3_MUX);
+		else
+			dsp3_mux = VC4_SET_FIELD(2, SCALER_DISPCTRL_DSP3_MUX);
+
+		dispctrl = HVS_READ(SCALER_DISPCTRL) &
+			   ~SCALER_DISPCTRL_DSP3_MUX_MASK;
+		HVS_WRITE(SCALER_DISPCTRL, dispctrl | dsp3_mux);
+	}
+}
+
+static void vc5_hvs_pv_muxing_commit(struct vc4_dev *vc4,
+				     struct drm_atomic_state *state)
+{
+	struct drm_crtc_state *crtc_state;
+	struct drm_crtc *crtc;
+	unsigned char mux;
 	unsigned int i;
 	u32 reg;
 
@@ -168,54 +250,59 @@ static void vc4_hvs_pv_muxing_commit(struct vc4_dev *vc4,
 		struct vc4_crtc_state *vc4_state = to_vc4_crtc_state(crtc_state);
 		struct vc4_crtc *vc4_crtc = to_vc4_crtc(crtc);
 
-		if (!crtc_state->active)
+		if (!vc4_state->update_muxing)
 			continue;
 
 		switch (vc4_crtc->data->hvs_output) {
 		case 2:
-			dsp2_mux = (vc4_state->assigned_channel == 2) ? 1 : 0;
+			mux = (vc4_state->assigned_channel == 2) ? 0 : 1;
+			reg = HVS_READ(SCALER_DISPECTRL);
+			HVS_WRITE(SCALER_DISPECTRL,
+				  (reg & ~SCALER_DISPECTRL_DSP2_MUX_MASK) |
+				  VC4_SET_FIELD(mux, SCALER_DISPECTRL_DSP2_MUX));
 			break;
 
 		case 3:
-			dsp3_mux = vc4_state->assigned_channel;
+			if (vc4_state->assigned_channel == VC4_HVS_CHANNEL_DISABLED)
+				mux = 3;
+			else
+				mux = vc4_state->assigned_channel;
+
+			reg = HVS_READ(SCALER_DISPCTRL);
+			HVS_WRITE(SCALER_DISPCTRL,
+				  (reg & ~SCALER_DISPCTRL_DSP3_MUX_MASK) |
+				  VC4_SET_FIELD(mux, SCALER_DISPCTRL_DSP3_MUX));
 			break;
 
 		case 4:
-			dsp4_mux = vc4_state->assigned_channel;
+			if (vc4_state->assigned_channel == VC4_HVS_CHANNEL_DISABLED)
+				mux = 3;
+			else
+				mux = vc4_state->assigned_channel;
+
+			reg = HVS_READ(SCALER_DISPEOLN);
+			HVS_WRITE(SCALER_DISPEOLN,
+				  (reg & ~SCALER_DISPEOLN_DSP4_MUX_MASK) |
+				  VC4_SET_FIELD(mux, SCALER_DISPEOLN_DSP4_MUX));
+
 			break;
 
 		case 5:
-			dsp5_mux = vc4_state->assigned_channel;
+			if (vc4_state->assigned_channel == VC4_HVS_CHANNEL_DISABLED)
+				mux = 3;
+			else
+				mux = vc4_state->assigned_channel;
+
+			reg = HVS_READ(SCALER_DISPDITHER);
+			HVS_WRITE(SCALER_DISPDITHER,
+				  (reg & ~SCALER_DISPDITHER_DSP5_MUX_MASK) |
+				  VC4_SET_FIELD(mux, SCALER_DISPDITHER_DSP5_MUX));
 			break;
 
 		default:
 			break;
 		}
 	}
-
-	reg = HVS_READ(SCALER_DISPECTRL);
-	if (FIELD_GET(SCALER_DISPECTRL_DSP2_MUX_MASK, reg) != dsp2_mux)
-		HVS_WRITE(SCALER_DISPECTRL,
-			  (reg & ~SCALER_DISPECTRL_DSP2_MUX_MASK) |
-			  VC4_SET_FIELD(dsp2_mux, SCALER_DISPECTRL_DSP2_MUX));
-
-	reg = HVS_READ(SCALER_DISPCTRL);
-	if (FIELD_GET(SCALER_DISPCTRL_DSP3_MUX_MASK, reg) != dsp3_mux)
-		HVS_WRITE(SCALER_DISPCTRL,
-			  (reg & ~SCALER_DISPCTRL_DSP3_MUX_MASK) |
-			  VC4_SET_FIELD(dsp3_mux, SCALER_DISPCTRL_DSP3_MUX));
-
-	reg = HVS_READ(SCALER_DISPEOLN);
-	if (FIELD_GET(SCALER_DISPEOLN_DSP4_MUX_MASK, reg) != dsp4_mux)
-		HVS_WRITE(SCALER_DISPEOLN,
-			  (reg & ~SCALER_DISPEOLN_DSP4_MUX_MASK) |
-			  VC4_SET_FIELD(dsp4_mux, SCALER_DISPEOLN_DSP4_MUX));
-
-	reg = HVS_READ(SCALER_DISPDITHER);
-	if (FIELD_GET(SCALER_DISPDITHER_DSP5_MUX_MASK, reg) != dsp5_mux)
-		HVS_WRITE(SCALER_DISPDITHER,
-			  (reg & ~SCALER_DISPDITHER_DSP5_MUX_MASK) |
-			  VC4_SET_FIELD(dsp5_mux, SCALER_DISPDITHER_DSP5_MUX));
 }
 
 static void
@@ -224,23 +311,22 @@ vc4_atomic_complete_commit(struct drm_atomic_state *state)
 	struct drm_device *dev = state->dev;
 	struct vc4_dev *vc4 = to_vc4_dev(dev);
 	struct vc4_hvs *hvs = vc4->hvs;
-	struct vc4_crtc *vc4_crtc;
+	struct drm_crtc_state *new_crtc_state;
+	struct drm_crtc *crtc;
 	int i;
 
-	for (i = 0; vc4->hvs && i < dev->mode_config.num_crtc; i++) {
-		struct __drm_crtcs_state *_state = &state->crtcs[i];
+	for_each_new_crtc_in_state(state, crtc, new_crtc_state, i) {
 		struct vc4_crtc_state *vc4_crtc_state;
 
-		if (!_state->ptr || !_state->commit)
+		if (!new_crtc_state->commit || vc4->firmware_kms)
 			continue;
 
-		vc4_crtc = to_vc4_crtc(_state->ptr);
-		vc4_crtc_state = to_vc4_crtc_state(_state->state);
+		vc4_crtc_state = to_vc4_crtc_state(new_crtc_state);
 		vc4_hvs_mask_underrun(dev, vc4_crtc_state->assigned_channel);
 	}
 
-	if (!vc4->firmware_kms)
-		clk_set_rate(hvs->core_clk, 500000000);
+	if (vc4->hvs && vc4->hvs->hvs5)
+		clk_set_min_rate(hvs->core_clk, 500000000);
 
 	drm_atomic_helper_wait_for_fences(dev, state, false);
 
@@ -248,9 +334,13 @@ vc4_atomic_complete_commit(struct drm_atomic_state *state)
 
 	drm_atomic_helper_commit_modeset_disables(dev, state);
 
+	vc4_ctm_commit(vc4, state);
+
 	if (!vc4->firmware_kms) {
-		vc4_ctm_commit(vc4, state);
-		vc4_hvs_pv_muxing_commit(vc4, state);
+		if (vc4->hvs->hvs5)
+			vc5_hvs_pv_muxing_commit(vc4, state);
+		else
+			vc4_hvs_pv_muxing_commit(vc4, state);
 	}
 
 	drm_atomic_helper_commit_planes(dev, state, 0);
@@ -267,8 +357,8 @@ vc4_atomic_complete_commit(struct drm_atomic_state *state)
 
 	drm_atomic_helper_commit_cleanup_done(state);
 
-	if (!vc4->firmware_kms)
-		clk_set_rate(hvs->core_clk, 200000000);
+	if (vc4->hvs && vc4->hvs->hvs5)
+		clk_set_min_rate(hvs->core_clk, 0);
 
 	drm_atomic_state_put(state);
 
@@ -419,7 +509,7 @@ static struct drm_framebuffer *vc4_fb_create(struct drm_device *dev,
 			mode_cmd_local.modifier[0] = DRM_FORMAT_MOD_NONE;
 		}
 
-		drm_gem_object_put_unlocked(gem_obj);
+		drm_gem_object_put(gem_obj);
 
 		mode_cmd = &mode_cmd_local;
 	}
@@ -580,27 +670,154 @@ static const struct drm_private_state_funcs vc4_load_tracker_state_funcs = {
 	.atomic_destroy_state = vc4_load_tracker_destroy_state,
 };
 
-#define NUM_OUTPUTS  6
-#define NUM_CHANNELS 3
-
-static int
-vc4_atomic_check(struct drm_device *dev, struct drm_atomic_state *state)
+static void vc4_load_tracker_obj_fini(struct drm_device *dev, void *unused)
 {
-	unsigned long unassigned_channels = GENMASK(NUM_CHANNELS - 1, 0);
+	struct vc4_dev *vc4 = to_vc4_dev(dev);
+
+	if (!vc4->load_tracker_available)
+		return;
+
+	drm_atomic_private_obj_fini(&vc4->load_tracker);
+}
+
+static int vc4_load_tracker_obj_init(struct vc4_dev *vc4)
+{
+	struct vc4_load_tracker_state *load_state;
+
+	if (!vc4->load_tracker_available)
+		return 0;
+
+	load_state = kzalloc(sizeof(*load_state), GFP_KERNEL);
+	if (!load_state)
+		return -ENOMEM;
+
+	drm_atomic_private_obj_init(&vc4->base, &vc4->load_tracker,
+				    &load_state->base,
+				    &vc4_load_tracker_state_funcs);
+
+	return drmm_add_action_or_reset(&vc4->base, vc4_load_tracker_obj_fini, NULL);
+}
+
+static struct drm_private_state *
+vc4_hvs_channels_duplicate_state(struct drm_private_obj *obj)
+{
+	struct vc4_hvs_state *old_state = to_vc4_hvs_state(obj->state);
+	struct vc4_hvs_state *state;
+
+	state = kzalloc(sizeof(*state), GFP_KERNEL);
+	if (!state)
+		return NULL;
+
+	__drm_atomic_helper_private_obj_duplicate_state(obj, &state->base);
+
+	state->unassigned_channels = old_state->unassigned_channels;
+
+	return &state->base;
+}
+
+static void vc4_hvs_channels_destroy_state(struct drm_private_obj *obj,
+					   struct drm_private_state *state)
+{
+	struct vc4_hvs_state *hvs_state = to_vc4_hvs_state(state);
+
+	kfree(hvs_state);
+}
+
+static const struct drm_private_state_funcs vc4_hvs_state_funcs = {
+	.atomic_duplicate_state = vc4_hvs_channels_duplicate_state,
+	.atomic_destroy_state = vc4_hvs_channels_destroy_state,
+};
+
+static void vc4_hvs_channels_obj_fini(struct drm_device *dev, void *unused)
+{
+	struct vc4_dev *vc4 = to_vc4_dev(dev);
+
+	drm_atomic_private_obj_fini(&vc4->hvs_channels);
+}
+
+static int vc4_hvs_channels_obj_init(struct vc4_dev *vc4)
+{
+	struct vc4_hvs_state *state;
+
+	state = kzalloc(sizeof(*state), GFP_KERNEL);
+	if (!state)
+		return -ENOMEM;
+
+	state->unassigned_channels = GENMASK(HVS_NUM_CHANNELS - 1, 0);
+	drm_atomic_private_obj_init(&vc4->base, &vc4->hvs_channels,
+				    &state->base,
+				    &vc4_hvs_state_funcs);
+
+	return drmm_add_action_or_reset(&vc4->base, vc4_hvs_channels_obj_fini, NULL);
+}
+
+/*
+ * The BCM2711 HVS has up to 7 outputs connected to the pixelvalves and
+ * the TXP (and therefore all the CRTCs found on that platform).
+ *
+ * The naive (and our initial) implementation would just iterate over
+ * all the active CRTCs, try to find a suitable FIFO, and then remove it
+ * from the pool of available FIFOs. However, there are a few corner
+ * cases that need to be considered:
+ *
+ * - When running in a dual-display setup (so with two CRTCs involved),
+ *   we can update the state of a single CRTC (for example by changing
+ *   its mode using xrandr under X11) without affecting the other. In
+ *   this case, the other CRTC wouldn't be in the state at all, so we
+ *   need to consider all the running CRTCs in the DRM device to assign
+ *   a FIFO, not just the one in the state.
+ *
+ * - To fix the above, we can't use drm_atomic_get_crtc_state on all
+ *   enabled CRTCs to pull their CRTC state into the global state, since
+ *   a page flip would start considering their vblank to complete. Since
+ *   we don't have a guarantee that they are actually active, that
+ *   vblank might never happen, and shouldn't even be considered if we
+ *   want to do a page flip on a single CRTC. That can be tested by
+ *   doing a modetest -v first on HDMI1 and then on HDMI0.
+ *
+ * - Since we need the pixelvalve to be disabled and enabled back when
+ *   the FIFO is changed, we should keep the FIFO assigned for as long
+ *   as the CRTC is enabled, only considering it free again once that
+ *   CRTC has been disabled. This can be tested by booting X11 on a
+ *   single display, and changing the resolution down and then back up.
+ */
+static int vc4_pv_muxing_atomic_check(struct drm_device *dev,
+				      struct drm_atomic_state *state)
+{
 	struct vc4_dev *vc4 = to_vc4_dev(state->dev);
-	struct drm_crtc_state *crtc_state;
+	struct vc4_hvs_state *hvs_new_state;
+	struct drm_crtc_state *old_crtc_state, *new_crtc_state;
 	struct drm_crtc *crtc;
-	int i, ret;
+	unsigned int i;
 
-	for_each_new_crtc_in_state(state, crtc, crtc_state, i) {
-		struct vc4_crtc_state *vc4_crtc_state =
-			to_vc4_crtc_state(crtc_state);
+	hvs_new_state = vc4_hvs_get_global_state(state);
+	if (!hvs_new_state)
+		return -EINVAL;
+
+	for_each_oldnew_crtc_in_state(state, crtc, old_crtc_state, new_crtc_state, i) {
+		struct vc4_crtc_state *old_vc4_crtc_state =
+			to_vc4_crtc_state(old_crtc_state);
+		struct vc4_crtc_state *new_vc4_crtc_state =
+			to_vc4_crtc_state(new_crtc_state);
 		struct vc4_crtc *vc4_crtc = to_vc4_crtc(crtc);
-		bool is_assigned = false;
-		unsigned int channel;
+		unsigned int matching_channels;
 
-		if (!crtc_state->active || vc4->firmware_kms)
+		if (vc4->firmware_kms)
 			continue;
+
+		/* Nothing to do here, let's skip it */
+		if (old_crtc_state->enable == new_crtc_state->enable)
+			continue;
+
+		/* Muxing will need to be modified, mark it as such */
+		new_vc4_crtc_state->update_muxing = true;
+
+		/* If we're disabling our CRTC, we put back our channel */
+		if (!new_crtc_state->enable) {
+			hvs_new_state->unassigned_channels |= BIT(old_vc4_crtc_state->assigned_channel);
+			new_vc4_crtc_state->assigned_channel = VC4_HVS_CHANNEL_DISABLED;
+			continue;
+		}
 
 		/*
 		 * The problem we have to solve here is that we have
@@ -626,21 +843,28 @@ vc4_atomic_check(struct drm_device *dev, struct drm_atomic_state *state)
 		 * the future, we will need to have something smarter,
 		 * but it works so far.
 		 */
-		for_each_set_bit(channel, &unassigned_channels,
-				 sizeof(unassigned_channels)) {
+		matching_channels = hvs_new_state->unassigned_channels & vc4_crtc->data->hvs_available_channels;
+		if (matching_channels) {
+			unsigned int channel = ffs(matching_channels) - 1;
 
-			if (!(BIT(channel) & vc4_crtc->data->hvs_available_channels))
-				continue;
-
-			vc4_crtc_state->assigned_channel = channel;
-			unassigned_channels &= ~BIT(channel);
-			is_assigned = true;
-			break;
-		}
-
-		if (!is_assigned)
+			new_vc4_crtc_state->assigned_channel = channel;
+			hvs_new_state->unassigned_channels &= ~BIT(channel);
+		} else {
 			return -EINVAL;
+		}
 	}
+
+	return 0;
+}
+
+static int
+vc4_atomic_check(struct drm_device *dev, struct drm_atomic_state *state)
+{
+	int ret;
+
+	ret = vc4_pv_muxing_atomic_check(dev, state);
+	if (ret)
+		return ret;
 
 	ret = vc4_ctm_atomic_check(dev, state);
 	if (ret < 0)
@@ -662,11 +886,11 @@ static const struct drm_mode_config_funcs vc4_mode_funcs = {
 int vc4_kms_load(struct drm_device *dev)
 {
 	struct vc4_dev *vc4 = to_vc4_dev(dev);
-	struct vc4_ctm_state *ctm_state;
-	struct vc4_load_tracker_state *load_state;
+	bool is_vc5 = of_device_is_compatible(dev->dev->of_node,
+					      "brcm,bcm2711-vc5");
 	int ret;
 
-	if (!of_device_is_compatible(dev->dev->of_node, "brcm,bcm2711-vc5")) {
+	if (!is_vc5) {
 		vc4->load_tracker_available = true;
 
 		/* Start with the load tracker enabled. Can be
@@ -687,40 +911,32 @@ int vc4_kms_load(struct drm_device *dev)
 		return ret;
 	}
 
-	if (!drm_core_check_feature(dev, DRIVER_RENDER)) {
-		/* No V3D as part of vc4. Assume this is Pi4. */
+	if (is_vc5) {
 		dev->mode_config.max_width = 7680;
 		dev->mode_config.max_height = 7680;
 	} else {
 		dev->mode_config.max_width = 2048;
 		dev->mode_config.max_height = 2048;
 	}
+
 	dev->mode_config.funcs = &vc4_mode_funcs;
 	dev->mode_config.preferred_depth = 24;
 	dev->mode_config.async_page_flip = true;
 	dev->mode_config.allow_fb_modifiers = true;
-	dev->mode_config.normalize_zpos = true;
+	if (vc4->firmware_kms)
+		dev->mode_config.normalize_zpos = true;
 
-	drm_modeset_lock_init(&vc4->ctm_state_lock);
+	ret = vc4_ctm_obj_init(vc4);
+	if (ret)
+		return ret;
 
-	ctm_state = kzalloc(sizeof(*ctm_state), GFP_KERNEL);
-	if (!ctm_state)
-		return -ENOMEM;
+	ret = vc4_load_tracker_obj_init(vc4);
+	if (ret)
+		return ret;
 
-	drm_atomic_private_obj_init(dev, &vc4->ctm_manager, &ctm_state->base,
-				    &vc4_ctm_state_funcs);
-
-	if (vc4->load_tracker_available) {
-		load_state = kzalloc(sizeof(*load_state), GFP_KERNEL);
-		if (!load_state) {
-			drm_atomic_private_obj_fini(&vc4->ctm_manager);
-			return -ENOMEM;
-		}
-
-		drm_atomic_private_obj_init(dev, &vc4->load_tracker,
-					    &load_state->base,
-					    &vc4_load_tracker_state_funcs);
-	}
+	ret = vc4_hvs_channels_obj_init(vc4);
+	if (ret)
+		return ret;
 
 	drm_mode_config_reset(dev);
 

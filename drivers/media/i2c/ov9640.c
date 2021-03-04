@@ -538,7 +538,7 @@ static int ov9640_set_fmt(struct v4l2_subdev *sd,
 		break;
 	default:
 		mf->code = MEDIA_BUS_FMT_UYVY8_2X8;
-		/* fall through */
+		fallthrough;
 	case MEDIA_BUS_FMT_UYVY8_2X8:
 		mf->colorspace = V4L2_COLORSPACE_JPEG;
 		break;
@@ -773,6 +773,6 @@ static struct i2c_driver ov9640_i2c_driver = {
 
 module_i2c_driver(ov9640_i2c_driver);
 
-MODULE_DESCRIPTION("SoC Camera driver for OmniVision OV96xx");
+MODULE_DESCRIPTION("OmniVision OV96xx CMOS Image Sensor driver");
 MODULE_AUTHOR("Marek Vasut <marek.vasut@gmail.com>");
 MODULE_LICENSE("GPL v2");

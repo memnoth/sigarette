@@ -208,7 +208,7 @@ struct hda_codec {
 	struct mutex control_mutex;
 	struct snd_array spdif_out;
 	unsigned int spdif_in_enable;	/* SPDIF input enable? */
-	const hda_nid_t *slave_dig_outs; /* optional digital out slave widgets */
+	const hda_nid_t *follower_dig_outs; /* optional digital out follower widgets */
 	struct snd_array init_pins;	/* initial (BIOS) pin configurations */
 	struct snd_array driver_pins;	/* pin configs set by codec parser */
 	struct snd_array cvt_setups;	/* audio convert setups */
@@ -344,7 +344,7 @@ snd_hda_get_num_conns(struct hda_codec *codec, hda_nid_t nid)
 #define snd_hda_get_raw_connections(codec, nid, list, max_conns) \
 	snd_hdac_get_connections(&(codec)->core, nid, list, max_conns)
 #define snd_hda_get_num_raw_conns(codec, nid) \
-	snd_hdac_get_connections(&(codec)->core, nid, NULL, 0);
+	snd_hdac_get_connections(&(codec)->core, nid, NULL, 0)
 
 int snd_hda_get_conn_list(struct hda_codec *codec, hda_nid_t nid,
 			  const hda_nid_t **listp);
@@ -415,6 +415,8 @@ int snd_hda_codec_build_pcms(struct hda_codec *codec);
 __printf(2, 3)
 struct hda_pcm *snd_hda_codec_pcm_new(struct hda_codec *codec,
 				      const char *fmt, ...);
+
+void snd_hda_codec_cleanup_for_unbind(struct hda_codec *codec);
 
 static inline void snd_hda_codec_pcm_get(struct hda_pcm *pcm)
 {

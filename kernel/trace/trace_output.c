@@ -20,7 +20,7 @@ DECLARE_RWSEM(trace_event_sem);
 
 static struct hlist_head event_hash[EVENT_HASHSIZE] __read_mostly;
 
-static int next_event_type = __TRACE_LAST_TYPE + 1;
+static int next_event_type = __TRACE_LAST_TYPE;
 
 enum print_line_t trace_print_bputs_msg_only(struct trace_iterator *iter)
 {
@@ -353,8 +353,8 @@ static inline const char *kretprobed(const char *name)
 }
 #endif /* CONFIG_KRETPROBES */
 
-static void
-seq_print_sym(struct trace_seq *s, unsigned long address, bool offset)
+void
+trace_seq_print_sym(struct trace_seq *s, unsigned long address, bool offset)
 {
 #ifdef CONFIG_KALLSYMS
 	char str[KSYM_SYMBOL_LEN];
@@ -420,7 +420,7 @@ seq_print_ip_sym(struct trace_seq *s, unsigned long ip, unsigned long sym_flags)
 		goto out;
 	}
 
-	seq_print_sym(s, ip, sym_flags & TRACE_ITER_SYM_OFFSET);
+	trace_seq_print_sym(s, ip, sym_flags & TRACE_ITER_SYM_OFFSET);
 
 	if (sym_flags & TRACE_ITER_SYM_ADDR)
 		trace_seq_printf(s, " <" IP_FMT ">", ip);
@@ -675,11 +675,11 @@ static LIST_HEAD(ftrace_event_list);
 static int trace_search_list(struct list_head **list)
 {
 	struct trace_event *e;
-	int last = __TRACE_LAST_TYPE;
+	int next = __TRACE_LAST_TYPE;
 
 	if (list_empty(&ftrace_event_list)) {
 		*list = &ftrace_event_list;
-		return last + 1;
+		return next;
 	}
 
 	/*
@@ -687,17 +687,17 @@ static int trace_search_list(struct list_head **list)
 	 * lets see if somebody freed one.
 	 */
 	list_for_each_entry(e, &ftrace_event_list, list) {
-		if (e->type != last + 1)
+		if (e->type != next)
 			break;
-		last++;
+		next++;
 	}
 
 	/* Did we used up all 65 thousand events??? */
-	if ((last + 1) > TRACE_EVENT_TYPE_MAX)
+	if (next > TRACE_EVENT_TYPE_MAX)
 		return 0;
 
 	*list = &e->list;
-	return last + 1;
+	return next;
 }
 
 void trace_event_read_lock(void)

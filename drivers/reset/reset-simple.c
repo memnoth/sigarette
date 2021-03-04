@@ -65,7 +65,7 @@ static int reset_simple_deassert(struct reset_controller_dev *rcdev,
 }
 
 static int reset_simple_reset(struct reset_controller_dev *rcdev,
-			       unsigned long id)
+			      unsigned long id)
 {
 	struct reset_simple_data *data = to_reset_simple_data(rcdev);
 	int ret;
@@ -79,11 +79,7 @@ static int reset_simple_reset(struct reset_controller_dev *rcdev,
 
 	usleep_range(data->reset_us, data->reset_us * 2);
 
-	ret = reset_simple_deassert(rcdev, id);
-	if (ret)
-		return ret;
-
-	return 0;
+	return reset_simple_deassert(rcdev, id);
 }
 
 static int reset_simple_status(struct reset_controller_dev *rcdev,

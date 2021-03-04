@@ -326,6 +326,7 @@ struct kvm_arch {
 #endif
 #ifdef CONFIG_KVM_XICS
 	struct kvmppc_xics *xics;
+	struct kvmppc_xics *xics_device;
 	struct kvmppc_xive *xive;    /* Current XIVE device in use */
 	struct {
 		struct kvmppc_xive *native;
@@ -638,12 +639,14 @@ struct kvm_vcpu_arch {
 	u32 ccr1;
 	u32 dbsr;
 
-	u64 mmcr[5];
+	u64 mmcr[4];	/* MMCR0, MMCR1, MMCR2, MMCR3 */
+	u64 mmcra;
+	u64 mmcrs;
 	u32 pmc[8];
 	u32 spmc[2];
 	u64 siar;
 	u64 sdar;
-	u64 sier;
+	u64 sier[3];
 #ifdef CONFIG_PPC_TRANSACTIONAL_MEM
 	u64 tfhar;
 	u64 texasr;

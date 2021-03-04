@@ -277,6 +277,8 @@ enum mmal_parameter_camera_type {
 	MMAL_PARAMETER_DPC,
 		/**< Tales a @ref MMAP_PARAMETER_GAMMA_T */
 	MMAL_PARAMETER_GAMMA,
+		/**< Takes a @ref MMAL_PARAMETER_CDN_T */
+	MMAL_PARAMETER_CDN,
 };
 
 struct mmal_parameter_rational {
@@ -674,6 +676,9 @@ enum mmal_parameter_video_type {
 
 	/**< Take a @ref MMAL_PARAMETER_BOOLEAN_T */
 	MMAL_PARAMETER_VIDEO_ENCODE_HEADERS_WITH_FRAME,
+
+	/**< Take a @ref MMAL_PARAMETER_BOOLEAN_T */
+	MMAL_PARAMETER_VIDEO_VALIDATE_TIMESTAMPS,
 };
 
 /** Valid mirror modes */
@@ -840,7 +845,7 @@ struct mmal_parameter_camera_info {
 	u32 num_cameras;
 	u32 num_flashes;
 	struct mmal_parameter_camera_info_camera
-				cameras[MMAL_PARAMETER_CAMERA_INFO_MAX_CAMERAS];
+		cameras[MMAL_PARAMETER_CAMERA_INFO_MAX_CAMERAS];
 	struct mmal_parameter_camera_info_flash
 		flashes[MMAL_PARAMETER_CAMERA_INFO_MAX_FLASHES];
 };
@@ -908,6 +913,17 @@ struct mmal_parameter_gamma {
 	u32 enabled;
 	u16 x[MMAL_NUM_GAMMA_PTS];
 	u16 y[MMAL_NUM_GAMMA_PTS];
+};
+
+enum mmal_parameter_cdn_mode {
+	MMAL_PARAM_CDN_FAST = 0,
+	MMAL_PARAM_CDN_HIGH_QUALITY = 1,
+	MMAL_PARAM_CDN_DUMMY  = 0x7FFFFFFF
+};
+
+struct mmal_parameter_colour_denoise {
+	u32 enabled;
+	enum mmal_parameter_cdn_mode mode;
 };
 
 struct mmal_parameter_denoise {

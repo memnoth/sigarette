@@ -39,12 +39,12 @@ FEATURE_TESTS_BASIC :=                  \
         gettid				\
         glibc                           \
         libbfd                          \
+        libbfd-buildid			\
         libcap                          \
         libelf                          \
         libelf-getphdrnum               \
         libelf-gelf_getnote             \
         libelf-getshdrstrndx            \
-        libelf-mmap                     \
         libnuma                         \
         numa_num_possible_cpus          \
         libperl                         \
@@ -98,7 +98,8 @@ FEATURE_TESTS_EXTRA :=                  \
          llvm-version                   \
          clang                          \
          libbpf                         \
-         libpfm4
+         libpfm4                        \
+         libdebuginfod
 
 FEATURE_TESTS ?= $(FEATURE_TESTS_BASIC)
 
@@ -111,6 +112,7 @@ FEATURE_DISPLAY ?=              \
          dwarf_getlocations     \
          glibc                  \
          libbfd                 \
+         libbfd-buildid		\
          libcap                 \
          libelf                 \
          libnuma                \

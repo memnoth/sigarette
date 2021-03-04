@@ -217,7 +217,7 @@ static int hw_atl_utils_soft_reset_rbl(struct aq_hw_s *self)
 
 	if (rbl_status == 0xF1A7) {
 		aq_pr_err("No FW detected. Dynamic FW load not implemented\n");
-		return -ENOTSUPP;
+		return -EOPNOTSUPP;
 	}
 
 	for (k = 0; k < 1000; k++) {
@@ -724,6 +724,7 @@ int hw_atl_utils_mpi_get_link_status(struct aq_hw_s *self)
 			return -EBUSY;
 		}
 	}
+	link_status->full_duplex = true;
 
 	return 0;
 }
@@ -1065,6 +1066,7 @@ const struct aq_fw_ops aq_fw_1x_ops = {
 	.set_state = hw_atl_utils_mpi_set_state,
 	.update_link_status = hw_atl_utils_mpi_get_link_status,
 	.update_stats = hw_atl_utils_update_stats,
+	.get_mac_temp = NULL,
 	.get_phy_temp = NULL,
 	.set_power = aq_fw1x_set_power,
 	.set_eee_rate = NULL,

@@ -1260,11 +1260,7 @@ static void (*cache_op_to_func(const unsigned int cache_op))
 		return NULL;
 
 	case VC_SM_CACHE_OP_INV:
-		return dmac_inv_range;
-
 	case VC_SM_CACHE_OP_CLEAN:
-		return dmac_clean_range;
-
 	case VC_SM_CACHE_OP_FLUSH:
 		return dmac_flush_range;
 
@@ -1362,14 +1358,9 @@ static long vc_sm_cma_ioctl(struct file *file, unsigned int cmd,
 
 	/* Action is a re-post of a previously interrupted action? */
 	if (file_data->restart_sys == -EINTR) {
-		struct vc_sm_action_clean_t action_clean;
-
 		pr_debug("[%s]: clean up of action %u (trans_id: %u) following EINTR\n",
 			 __func__, file_data->int_action,
 			 file_data->int_trans_id);
-
-		action_clean.res_action = file_data->int_action;
-		action_clean.action_trans_id = file_data->int_trans_id;
 
 		file_data->restart_sys = 0;
 	}
@@ -1509,7 +1500,7 @@ static const struct file_operations vc_sm_ops = {
 static void vc_sm_connected_init(void)
 {
 	int ret;
-	struct vchi_instance_handle * vchi_instance;
+	struct vchiq_instance *vchiq_instance;
 	struct vc_sm_version version;
 	struct vc_sm_result_t version_result;
 
@@ -1519,7 +1510,7 @@ static void vc_sm_connected_init(void)
 	 * Initialize and create a VCHI connection for the shared memory service
 	 * running on videocore.
 	 */
-	ret = vchi_initialise(&vchi_instance);
+	ret = vchiq_initialise(&vchiq_instance);
 	if (ret) {
 		pr_err("[%s]: failed to initialise VCHI instance (ret=%d)\n",
 		       __func__, ret);
@@ -1527,7 +1518,7 @@ static void vc_sm_connected_init(void)
 		return;
 	}
 
-	ret = vchi_connect(vchi_instance);
+	ret = vchiq_connect(vchiq_instance);
 	if (ret) {
 		pr_err("[%s]: failed to connect VCHI instance (ret=%d)\n",
 		       __func__, ret);
@@ -1536,7 +1527,7 @@ static void vc_sm_connected_init(void)
 	}
 
 	/* Initialize an instance of the shared memory service. */
-	sm_state->sm_handle = vc_sm_cma_vchi_init(vchi_instance, 1,
+	sm_state->sm_handle = vc_sm_cma_vchi_init(vchiq_instance, 1,
 						  vc_sm_vpu_event);
 	if (!sm_state->sm_handle) {
 		pr_err("[%s]: failed to initialize shared memory service\n",
@@ -1687,7 +1678,6 @@ EXPORT_SYMBOL_GPL(vc_sm_cma_free);
 int vc_sm_cma_import_dmabuf(struct dma_buf *src_dmabuf, void **handle)
 {
 	struct dma_buf *new_dma_buf;
-	struct vc_sm_buffer *buf;
 	int ret;
 
 	/* Validate we can work with this device. */
@@ -1701,7 +1691,6 @@ int vc_sm_cma_import_dmabuf(struct dma_buf *src_dmabuf, void **handle)
 
 	if (!ret) {
 		pr_debug("%s: imported to ptr %p\n", __func__, new_dma_buf);
-		buf = (struct vc_sm_buffer *)new_dma_buf->priv;
 
 		/* Assign valid handle at this time.*/
 		*handle = new_dma_buf;

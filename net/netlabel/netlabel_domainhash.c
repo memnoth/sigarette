@@ -93,7 +93,7 @@ static void netlbl_domhsh_free_entry(struct rcu_head *entry)
 
 /**
  * netlbl_domhsh_hash - Hashing function for the domain hash table
- * @domain: the domain name to hash
+ * @key: the domain name to hash
  *
  * Description:
  * This is the hashing function for the domain hash table, it returns the
@@ -612,9 +612,8 @@ int netlbl_domhsh_remove_entry(struct netlbl_dom_map *entry,
 	audit_buf = netlbl_audit_start_common(AUDIT_MAC_MAP_DEL, audit_info);
 	if (audit_buf != NULL) {
 		audit_log_format(audit_buf,
-				 " nlbl_domain=%s res=%u",
-				 entry->domain ? entry->domain : "(default)",
-				 ret_val == 0 ? 1 : 0);
+				 " nlbl_domain=%s res=1",
+				 entry->domain ? entry->domain : "(default)");
 		audit_log_end(audit_buf);
 	}
 

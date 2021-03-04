@@ -119,6 +119,9 @@ int pvrdma_create_cq(struct ib_cq *ibcq, const struct ib_cq_init_attr *attr,
 
 	BUILD_BUG_ON(sizeof(struct pvrdma_cqe) != 64);
 
+	if (attr->flags)
+		return -EOPNOTSUPP;
+
 	entries = roundup_pow_of_two(entries);
 	if (entries < 1 || entries > dev->dsr->caps.max_cqe)
 		return -EINVAL;
@@ -142,7 +145,7 @@ int pvrdma_create_cq(struct ib_cq *ibcq, const struct ib_cq_init_attr *attr,
 			goto err_cq;
 		}
 
-		npages = ib_umem_page_count(cq->umem);
+		npages = ib_umem_num_dma_blocks(cq->umem, PAGE_SIZE);
 	} else {
 		/* One extra page for shared ring state */
 		npages = 1 + (entries * sizeof(struct pvrdma_cqe) +
@@ -364,7 +367,7 @@ retry:
 	wc->dlid_path_bits = cqe->dlid_path_bits;
 	wc->port_num = cqe->port_num;
 	wc->vendor_err = cqe->vendor_err;
-	wc->network_hdr_type = cqe->network_hdr_type;
+	wc->network_hdr_type = pvrdma_network_type_to_ib(cqe->network_hdr_type);
 
 	/* Update shared ring state */
 	pvrdma_idx_ring_inc(&cq->ring_state->rx.cons_head, cq->ibcq.cqe);
@@ -376,7 +379,7 @@ retry:
  * pvrdma_poll_cq - poll for work completion queue entries
  * @ibcq: completion queue
  * @num_entries: the maximum number of entries
- * @entry: pointer to work completion array
+ * @wc: pointer to work completion array
  *
  * @return: number of polled completion entries
  */

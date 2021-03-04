@@ -233,7 +233,7 @@ static const struct usbmix_name_map maya44_map[] = {
 };
 
 /* Section "justlink_map" below added by James Courtier-Dutton <James@superbug.demon.co.uk>
- * sourced from Maplin Electronics (http://www.maplin.co.uk), part number A56AK
+ * sourced from Maplin Electronics (https://www.maplin.co.uk), part number A56AK
  * Part has 2 connectors that act as a single output. (TOSLINK Optical for digital out, and 3.5mm Jack for Analogue out.)
  * The USB Mixer publishes a Microphone and extra Volume controls for it, but none exist on the device,
  * so this map removes all unwanted sliders from alsamixer
@@ -371,7 +371,6 @@ static const struct usbmix_name_map asus_rog_map[] = {
 };
 
 static const struct usbmix_name_map lenovo_p620_rear_map[] = {
-	{ 19, NULL, 2 }, /* FU, Volume */
 	{ 19, NULL, 12 }, /* FU, Input Gain Pad */
 	{}
 };
@@ -562,7 +561,8 @@ static const struct usbmix_ctl_map usbmix_ctl_maps[] = {
 	},
 	{	/* ASUS ROG Strix */
 		.id = USB_ID(0x0b05, 0x1917),
-		.map = asus_rog_map,
+		.map = trx40_mobo_map,
+		.connector_map = trx40_mobo_connector_map,
 	},
 	{	/* MSI TRX40 Creator */
 		.id = USB_ID(0x0db0, 0x0d64),

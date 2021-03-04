@@ -56,14 +56,6 @@ static char *rpi_firmware_clk_names[] = {
 #define RPI_FIRMWARE_STATE_ENABLE_BIT	BIT(0)
 #define RPI_FIRMWARE_STATE_WAIT_BIT	BIT(1)
 
-/*
- * Even though the firmware interface alters 'pllb' the frequencies are
- * provided as per 'pllb_arm'. We need to scale before passing them trough.
- */
-#define RPI_FIRMWARE_PLLB_ARM_DIV_RATE	2
-
-#define A2W_PLL_FRAC_BITS		20
-
 struct raspberrypi_clk {
 	struct device *dev;
 	struct rpi_firmware *firmware;
@@ -72,7 +64,8 @@ struct raspberrypi_clk {
 
 struct raspberrypi_clk_data {
 	struct clk_hw hw;
-	unsigned id;
+
+	unsigned int id;
 
 	struct raspberrypi_clk *rpi;
 };
@@ -215,8 +208,8 @@ static struct clk_hw *raspberrypi_clk_register(struct raspberrypi_clk *rpi,
 					 RPI_FIRMWARE_GET_MIN_CLOCK_RATE,
 					 &min_rate);
 	if (ret) {
-		dev_err(rpi->dev, "Failed to get %s min freq: %d\n",
-			init.name, ret);
+		dev_err(rpi->dev, "Failed to get clock %d min freq: %d",
+			id, ret);
 		return ERR_PTR(ret);
 	}
 
@@ -224,8 +217,8 @@ static struct clk_hw *raspberrypi_clk_register(struct raspberrypi_clk *rpi,
 					 RPI_FIRMWARE_GET_MAX_CLOCK_RATE,
 					 &max_rate);
 	if (ret) {
-		dev_err(rpi->dev, "Failed to get %s max freq: %d\n",
-			init.name, ret);
+		dev_err(rpi->dev, "Failed to get clock %d max freq: %d\n",
+			id, ret);
 		return ERR_PTR(ret);
 	}
 
@@ -246,6 +239,11 @@ static struct clk_hw *raspberrypi_clk_register(struct raspberrypi_clk *rpi,
 
 	return &data->hw;
 }
+
+struct rpi_firmware_get_clocks_response {
+	u32 parent;
+	u32 id;
+};
 
 static int raspberrypi_discover_clocks(struct raspberrypi_clk *rpi,
 				       struct clk_hw_onecell_data *data)
@@ -273,6 +271,7 @@ static int raspberrypi_discover_clocks(struct raspberrypi_clk *rpi,
 		case RPI_FIRMWARE_CORE_CLK_ID:
 		case RPI_FIRMWARE_M2MC_CLK_ID:
 		case RPI_FIRMWARE_V3D_CLK_ID:
+		case RPI_FIRMWARE_PIXEL_BVB_CLK_ID:
 			hw = raspberrypi_clk_register(rpi, clks->parent,
 						      clks->id);
 			if (IS_ERR(hw))

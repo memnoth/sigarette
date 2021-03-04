@@ -10,8 +10,10 @@
 #include <linux/input.h>
 #include <linux/soundwire/sdw.h>
 #include <linux/soundwire/sdw_type.h>
+#include <sound/control.h>
 #include <sound/soc.h>
 #include <sound/soc-acpi.h>
+#include <sound/soc-dapm.h>
 #include <sound/jack.h>
 #include "sof_sdw_common.h"
 
@@ -162,7 +164,7 @@ int sof_sdw_rt711_init(const struct snd_soc_acpi_link_adr *link,
 	if (!playback)
 		return 0;
 
-	ret = rt711_add_codec_device_props("sdw:0:25d:711:0");
+	ret = rt711_add_codec_device_props(dai_links->codecs[0].name);
 	if (ret < 0)
 		return ret;
 

@@ -90,7 +90,7 @@
 #define hio_warn(f, arg...) printk(KERN_WARNING MODULE_NAME"warn: " f , ## arg)
 #define hio_err(f, arg...)  printk(KERN_ERR MODULE_NAME"err: " f , ## arg)
 
-#if (LINUX_VERSION_CODE > KERNEL_VERSION(5,6,0))
+#if (LINUX_VERSION_CODE > KERNEL_VERSION(5,6,0)) && (LINUX_VERSION_CODE < KERNEL_VERSION(5,11,0))
 struct hd_struct *disk_map_sector_rcu(struct gendisk *disk, sector_t sector);
 #endif
 
@@ -6116,7 +6116,10 @@ static int ssd_init_rom_info(struct ssd_device *dev)
 static int ssd_update_smart(struct ssd_device *dev, struct ssd_smart *smart)
 {
 	uint64_t cur_time, run_time;
-#if (LINUX_VERSION_CODE > KERNEL_VERSION(2,6,27))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,11,0))
+	struct block_device *part;
+	int cpu;
+#elif (LINUX_VERSION_CODE > KERNEL_VERSION(2,6,27))
 	struct hd_struct *part;
 	int cpu;
 #endif
@@ -8510,7 +8513,9 @@ out:
 	return;
 }
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,4,0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,9,0))
+static blk_qc_t hio_submit_bio(struct bio *bio)
+#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(4,4,0))
 static blk_qc_t ssd_make_request(struct request_queue *q, struct bio *bio)
 #elif (LINUX_VERSION_CODE >= KERNEL_VERSION(3,2,0))
 static void ssd_make_request(struct request_queue *q, struct bio *bio)
@@ -8518,6 +8523,9 @@ static void ssd_make_request(struct request_queue *q, struct bio *bio)
 static int ssd_make_request(struct request_queue *q, struct bio *bio)
 #endif
 {
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,9,0))
+	struct request_queue *q = bio->bi_disk->queue;
+#endif
 	struct ssd_device *dev = q->queuedata;
 	int ret = -EBUSY;
 
@@ -8526,7 +8534,9 @@ static int ssd_make_request(struct request_queue *q, struct bio *bio)
 		goto out;
 	}
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,13,0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,9,0))
+	blk_queue_split(&bio);
+#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(4,13,0))
 	blk_queue_split(q, &bio);
 #elif (LINUX_VERSION_CODE >= KERNEL_VERSION(4,3,0))
 	blk_queue_split(q, &bio, q->bio_split);
@@ -10381,6 +10391,9 @@ static struct block_device_operations ssd_fops = {
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,16))
 	.getgeo		= ssd_block_getgeo,
 #endif
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,9,0))
+	.submit_bio	= hio_submit_bio,
+#endif
 };
 
 static void ssd_init_trim(ssd_device_t *dev)
@@ -10430,7 +10443,11 @@ static int ssd_init_queue(struct ssd_device *dev)
 	/* must be first */
 	blk_queue_make_request(dev->rq, ssd_make_request);
 #else
+# if (LINUX_VERSION_CODE < KERNEL_VERSION(5,9,0))
 	dev->rq = blk_alloc_queue(ssd_make_request, NUMA_NO_NODE);
+# else
+	dev->rq = blk_alloc_queue(NUMA_NO_NODE);
+# endif
 	if (dev->rq == NULL) {
 		hio_warn("%s: blk_alloc_queue(): failed\n ", dev->name);
 		goto out_init_queue;

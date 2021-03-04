@@ -40,6 +40,10 @@
 #define CHIP_ID				0x9281
 #define OV9281_REG_CHIP_ID		0x300a
 
+#define OV9281_REG_TIMING_FORMAT_1		0x3820
+#define OV9281_REG_TIMING_FORMAT_2		0x3821
+#define OV9281_FLIP_BIT				BIT(2)
+
 #define OV9281_REG_CTRL_MODE		0x0100
 #define OV9281_MODE_SW_STANDBY		0x0
 #define OV9281_MODE_STREAMING		BIT(0)
@@ -123,6 +127,8 @@ struct ov9281 {
 	struct v4l2_ctrl	*digi_gain;
 	struct v4l2_ctrl	*hblank;
 	struct v4l2_ctrl	*vblank;
+	struct v4l2_ctrl	*hflip;
+	struct v4l2_ctrl	*vflip;
 	struct v4l2_ctrl	*pixel_rate;
 	struct v4l2_ctrl	*test_pattern;
 	struct mutex		mutex;
@@ -139,7 +145,7 @@ struct ov9281 {
  * max_framerate 120fps for 10 bit, 144fps for 8 bit.
  * mipi_datarate per lane 800Mbps
  */
-static const struct regval ov9281_1280x800_regs[] = {
+static const struct regval ov9281_common_regs[] = {
 	{0x0103, 0x01},
 	{0x0302, 0x32},
 	{0x030e, 0x02},
@@ -177,13 +183,35 @@ static const struct regval ov9281_1280x800_regs[] = {
 	{0x372d, 0x22},
 	{0x3731, 0x80},
 	{0x3732, 0x30},
-	{0x3778, 0x00},
 	{0x377d, 0x22},
 	{0x3788, 0x02},
 	{0x3789, 0xa4},
 	{0x378a, 0x00},
 	{0x378b, 0x4a},
 	{0x3799, 0x20},
+	{0x3881, 0x42},
+	{0x38b1, 0x00},
+	{0x3920, 0xff},
+	{0x4010, 0x40},
+	{0x4043, 0x40},
+	{0x4307, 0x30},
+	{0x4317, 0x00},
+	{0x4501, 0x00},
+	{0x450a, 0x08},
+	{0x4601, 0x04},
+	{0x470f, 0x00},
+	{0x4f07, 0x00},
+	{0x4800, 0x00},
+	{0x5000, 0x9f},
+	{0x5001, 0x00},
+	{0x5e00, 0x00},
+	{0x5d00, 0x07},
+	{0x5d01, 0x00},
+	{REG_NULL, 0x00},
+};
+
+static const struct regval ov9281_1280x800_regs[] = {
+	{0x3778, 0x00},
 	{0x3800, 0x00},
 	{0x3801, 0x00},
 	{0x3802, 0x00},
@@ -208,31 +236,84 @@ static const struct regval ov9281_1280x800_regs[] = {
 	{0x3815, 0x11},
 	{0x3820, 0x40},
 	{0x3821, 0x00},
-	{0x3881, 0x42},
-	{0x38b1, 0x00},
-	{0x3920, 0xff},
 	{0x4003, 0x40},
 	{0x4008, 0x04},
 	{0x4009, 0x0b},
 	{0x400c, 0x00},
 	{0x400d, 0x07},
-	{0x4010, 0x40},
-	{0x4043, 0x40},
-	{0x4307, 0x30},
-	{0x4317, 0x00},
-	{0x4501, 0x00},
 	{0x4507, 0x00},
 	{0x4509, 0x00},
-	{0x450a, 0x08},
-	{0x4601, 0x04},
-	{0x470f, 0x00},
-	{0x4f07, 0x00},
-	{0x4800, 0x00},
-	{0x5000, 0x9f},
-	{0x5001, 0x00},
-	{0x5e00, 0x00},
-	{0x5d00, 0x07},
-	{0x5d01, 0x00},
+	{REG_NULL, 0x00},
+};
+
+static const struct regval ov9281_1280x720_regs[] = {
+	{0x3778, 0x00},
+	{0x3800, 0x00},
+	{0x3801, 0x00},
+	{0x3802, 0x00},
+	{0x3803, 0x28},
+	{0x3804, 0x05},
+	{0x3805, 0x0f},
+	{0x3806, 0x03},
+	{0x3807, 0x07},
+	{0x3808, 0x05},
+	{0x3809, 0x00},
+	{0x380a, 0x02},
+	{0x380b, 0xd0},
+	{0x380c, 0x02},
+	{0x380d, 0xd8},
+	{0x380e, 0x03},
+	{0x380f, 0x8e},
+	{0x3810, 0x00},
+	{0x3811, 0x08},
+	{0x3812, 0x00},
+	{0x3813, 0x08},
+	{0x3814, 0x11},
+	{0x3815, 0x11},
+	{0x3820, 0x40},
+	{0x3821, 0x00},
+	{0x4003, 0x40},
+	{0x4008, 0x04},
+	{0x4009, 0x0b},
+	{0x400c, 0x00},
+	{0x400d, 0x07},
+	{0x4507, 0x00},
+	{0x4509, 0x00},
+	{REG_NULL, 0x00},
+};
+
+static const struct regval ov9281_640x400_regs[] = {
+	{0x3778, 0x10},
+	{0x3800, 0x00},
+	{0x3801, 0x00},
+	{0x3802, 0x00},
+	{0x3803, 0x00},
+	{0x3804, 0x05},
+	{0x3805, 0x0f},
+	{0x3806, 0x03},
+	{0x3807, 0x2f},
+	{0x3808, 0x02},
+	{0x3809, 0x80},
+	{0x380a, 0x01},
+	{0x380b, 0x90},
+	{0x380c, 0x02},
+	{0x380d, 0xd8},
+	{0x380e, 0x02},
+	{0x380f, 0x08},
+	{0x3810, 0x00},
+	{0x3811, 0x04},
+	{0x3812, 0x00},
+	{0x3813, 0x04},
+	{0x3814, 0x31},
+	{0x3815, 0x22},
+	{0x3820, 0x60},
+	{0x3821, 0x01},
+	{0x4008, 0x02},
+	{0x4009, 0x05},
+	{0x400c, 0x00},
+	{0x400d, 0x03},
+	{0x4507, 0x03},
+	{0x4509, 0x80},
 	{REG_NULL, 0x00},
 };
 
@@ -262,6 +343,34 @@ static const struct ov9281_mode supported_modes[] = {
 			.height = 800
 		},
 		.reg_list = ov9281_1280x800_regs,
+	},
+	{
+		.width = 1280,
+		.height = 720,
+		.exp_def = 0x0320,
+		.hts_def = 0x05b0,
+		.vts_def = 761,
+		.crop = {
+			.left = 0,
+			.top = 40,
+			.width = 1280,
+			.height = 720
+		},
+		.reg_list = ov9281_1280x720_regs,
+	},
+	{
+		.width = 640,
+		.height = 400,
+		.exp_def = 0x0320,
+		.hts_def = 0x05b0,
+		.vts_def = 421,
+		.crop = {
+			.left = 0,
+			.top = 0,
+			.width = 1280,
+			.height = 800
+		},
+		.reg_list = ov9281_640x400_regs,
 	},
 };
 
@@ -512,6 +621,42 @@ static int ov9281_enable_test_pattern(struct ov9281 *ov9281, u32 pattern)
 				OV9281_REG_VALUE_08BIT, val);
 }
 
+static int ov9281_set_ctrl_hflip(struct ov9281 *ov9281, int value)
+{
+	u32 current_val;
+	int ret = ov9281_read_reg(ov9281->client, OV9281_REG_TIMING_FORMAT_2,
+					OV9281_REG_VALUE_08BIT, &current_val);
+	if (!ret) {
+		if (value)
+			current_val |= OV9281_FLIP_BIT;
+		else
+			current_val &= ~OV9281_FLIP_BIT;
+		return ov9281_write_reg(ov9281->client,
+						OV9281_REG_TIMING_FORMAT_2,
+						OV9281_REG_VALUE_08BIT,
+						current_val);
+	}
+	return ret;
+}
+
+static int ov9281_set_ctrl_vflip(struct ov9281 *ov9281, int value)
+{
+	u32 current_val;
+	int ret = ov9281_read_reg(ov9281->client, OV9281_REG_TIMING_FORMAT_1,
+					OV9281_REG_VALUE_08BIT, &current_val);
+	if (!ret) {
+		if (value)
+			current_val |= OV9281_FLIP_BIT;
+		else
+			current_val &= ~OV9281_FLIP_BIT;
+		return ov9281_write_reg(ov9281->client,
+						OV9281_REG_TIMING_FORMAT_1,
+						OV9281_REG_VALUE_08BIT,
+						current_val);
+	}
+	return ret;
+}
+
 static const struct v4l2_rect *
 __ov9281_get_pad_crop(struct ov9281 *ov9281, struct v4l2_subdev_pad_config *cfg,
 		      unsigned int pad, enum v4l2_subdev_format_whence which)
@@ -566,6 +711,10 @@ static int ov9281_get_selection(struct v4l2_subdev *sd,
 static int __ov9281_start_stream(struct ov9281 *ov9281)
 {
 	int ret;
+
+	ret = ov9281_write_array(ov9281->client, ov9281_common_regs);
+	if (ret)
+		return ret;
 
 	ret = ov9281_write_array(ov9281->client, ov9281->cur_mode->reg_list);
 	if (ret)
@@ -826,6 +975,12 @@ static int ov9281_set_ctrl(struct v4l2_ctrl *ctrl)
 		return 0;
 
 	switch (ctrl->id) {
+	case V4L2_CID_HFLIP:
+		ret = ov9281_set_ctrl_hflip(ov9281, ctrl->val);
+		break;
+	case V4L2_CID_VFLIP:
+		ret = ov9281_set_ctrl_vflip(ov9281, ctrl->val);
+		break;
 	case V4L2_CID_EXPOSURE:
 		/* 4 least significant bits of expsoure are fractional part */
 		ret = ov9281_write_reg(ov9281->client, OV9281_REG_EXPOSURE,
@@ -874,7 +1029,7 @@ static int ov9281_initialize_controls(struct ov9281 *ov9281)
 
 	handler = &ov9281->ctrl_handler;
 	mode = ov9281->cur_mode;
-	ret = v4l2_ctrl_handler_init(handler, 8);
+	ret = v4l2_ctrl_handler_init(handler, 9);
 	if (ret)
 		return ret;
 	handler->lock = &ov9281->mutex;
@@ -914,6 +1069,14 @@ static int ov9281_initialize_controls(struct ov9281 *ov9281)
 					      OV9281_GAIN_MIN, OV9281_GAIN_MAX,
 					      OV9281_GAIN_STEP,
 					      OV9281_GAIN_DEFAULT);
+
+	ov9281->vflip = v4l2_ctrl_new_std(handler, &ov9281_ctrl_ops,
+					  V4L2_CID_VFLIP,
+						0, 1, 1, 0);
+
+	ov9281->hflip = v4l2_ctrl_new_std(handler, &ov9281_ctrl_ops,
+					  V4L2_CID_HFLIP,
+						0, 1, 1, 0);
 
 	ov9281->test_pattern =
 		v4l2_ctrl_new_std_menu_items(handler, &ov9281_ctrl_ops,

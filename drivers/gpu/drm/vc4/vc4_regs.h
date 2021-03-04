@@ -6,19 +6,18 @@
 #ifndef VC4_REGS_H
 #define VC4_REGS_H
 
+#include <linux/bitfield.h>
 #include <linux/bitops.h>
 
 #define VC4_MASK(high, low) ((u32)GENMASK(high, low))
 /* Using the GNU statement expression extension */
 #define VC4_SET_FIELD(value, field)					\
 	({								\
-		uint32_t fieldval = (value) << field##_SHIFT;		\
-		WARN_ON((fieldval & ~field##_MASK) != 0);		\
-		fieldval & field##_MASK;				\
+		WARN_ON(!FIELD_FIT(field##_MASK, value));		\
+		FIELD_PREP(field##_MASK, value);			\
 	 })
 
-#define VC4_GET_FIELD(word, field) (((word) & field##_MASK) >>		\
-				    field##_SHIFT)
+#define VC4_GET_FIELD(word, field) FIELD_GET(field##_MASK, word)
 
 #define V3D_IDENT0   0x00000
 # define V3D_EXPECTED_IDENT0 \
@@ -214,6 +213,7 @@
 #define PV_MUX_CFG				0x34
 # define PV_MUX_CFG_RGB_PIXEL_MUX_MODE_MASK	VC4_MASK(5, 2)
 # define PV_MUX_CFG_RGB_PIXEL_MUX_MODE_SHIFT	2
+# define PV_MUX_CFG_RGB_PIXEL_MUX_MODE_NO_SWAP	8
 
 #define SCALER_CHANNELS_COUNT			3
 
@@ -516,7 +516,6 @@
 # define VC4_HDMI_AUDIO_PACKET_CEA_MASK_MASK			VC4_MASK(7, 0)
 # define VC4_HDMI_AUDIO_PACKET_CEA_MASK_SHIFT			0
 
-
 # define VC4_HDMI_MAI_FORMAT_AUDIO_FORMAT_MASK		VC4_MASK(23, 16)
 # define VC4_HDMI_MAI_FORMAT_AUDIO_FORMAT_SHIFT		16
 
@@ -699,15 +698,6 @@ enum {
 # define VC4_HDMI_CPU_CEC			BIT(6)
 # define VC4_HDMI_CPU_HOTPLUG			BIT(0)
 
-# define VC5_HDMI0_CPU_CEC_RX			BIT(1)
-# define VC5_HDMI0_CPU_CEC_TX			BIT(0)
-# define VC5_HDMI0_CPU_HOTPLUG_CONN		BIT(4)
-# define VC5_HDMI0_CPU_HOTPLUG_REM		BIT(5)
-# define VC5_HDMI1_CPU_CEC_RX			BIT(7)
-# define VC5_HDMI1_CPU_CEC_TX			BIT(6)
-# define VC5_HDMI1_CPU_HOTPLUG_CONN		BIT(10)
-# define VC5_HDMI1_CPU_HOTPLUG_REM		BIT(11)
-
 /* Debug: Current receive value on the CEC pad. */
 # define VC4_HD_CECRXD				BIT(9)
 /* Debug: Override CEC output to 0. */
@@ -763,6 +753,9 @@ enum {
 # define VC4_HD_VID_CTL_FRAME_COUNTER_RESET	BIT(29)
 # define VC4_HD_VID_CTL_VSYNC_LOW		BIT(28)
 # define VC4_HD_VID_CTL_HSYNC_LOW		BIT(27)
+# define VC4_HD_VID_CTL_CLRSYNC			BIT(24)
+# define VC4_HD_VID_CTL_CLRRGB			BIT(23)
+# define VC4_HD_VID_CTL_BLANKPIX		BIT(18)
 
 # define VC4_HD_CSC_CTL_ORDER_MASK		VC4_MASK(7, 5)
 # define VC4_HD_CSC_CTL_ORDER_SHIFT		5
@@ -780,6 +773,8 @@ enum {
 # define VC4_HD_CSC_CTL_MODE_CUSTOM		3
 # define VC4_HD_CSC_CTL_RGB2YCC			BIT(1)
 # define VC4_HD_CSC_CTL_ENABLE			BIT(0)
+
+# define VC4_DVP_HT_CLOCK_STOP_PIXEL		BIT(1)
 
 /* HVS display list information. */
 #define HVS_BOOTLOADER_DLIST_END                32

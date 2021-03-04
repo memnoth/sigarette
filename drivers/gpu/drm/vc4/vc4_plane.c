@@ -149,10 +149,9 @@ static const struct hvs_format *vc4_get_hvs_format(u32 drm_format)
 	return NULL;
 }
 
-static enum vc4_scaling_mode vc4_get_scaling_mode(u32 src, u32 dst,
-						  bool chroma_vrep)
+static enum vc4_scaling_mode vc4_get_scaling_mode(u32 src, u32 dst)
 {
-	if (dst == src && !chroma_vrep)
+	if (dst == src)
 		return VC4_SCALING_NONE;
 	if (3 * dst >= 2 * src)
 		return VC4_SCALING_PPF;
@@ -228,7 +227,7 @@ static void vc4_plane_reset(struct drm_plane *plane)
 	__drm_atomic_helper_plane_reset(plane, &vc4_state->base);
 }
 
-static void vc4_dlist_write(struct vc4_plane_state *vc4_state, u32 val)
+static void vc4_dlist_counter_increment(struct vc4_plane_state *vc4_state)
 {
 	if (vc4_state->dlist_count == vc4_state->dlist_size) {
 		u32 new_size = max(4u, vc4_state->dlist_count * 2);
@@ -243,7 +242,15 @@ static void vc4_dlist_write(struct vc4_plane_state *vc4_state, u32 val)
 		vc4_state->dlist_size = new_size;
 	}
 
-	vc4_state->dlist[vc4_state->dlist_count++] = val;
+	vc4_state->dlist_count++;
+}
+
+static void vc4_dlist_write(struct vc4_plane_state *vc4_state, u32 val)
+{
+	unsigned int idx = vc4_state->dlist_count;
+
+	vc4_dlist_counter_increment(vc4_state);
+	vc4_state->dlist[idx] = val;
 }
 
 /* Returns the scl0/scl1 field based on whether the dimensions need to
@@ -377,11 +384,9 @@ static int vc4_plane_setup_clipping_and_scaling(struct drm_plane_state *state)
 		return ret;
 
 	vc4_state->x_scaling[0] = vc4_get_scaling_mode(vc4_state->src_w[0],
-						       vc4_state->crtc_w,
-						       false);
+						       vc4_state->crtc_w);
 	vc4_state->y_scaling[0] = vc4_get_scaling_mode(vc4_state->src_h[0],
-						       vc4_state->crtc_h,
-						       false);
+						       vc4_state->crtc_h);
 
 	vc4_state->is_unity = (vc4_state->x_scaling[0] == VC4_SCALING_NONE &&
 			       vc4_state->y_scaling[0] == VC4_SCALING_NONE);
@@ -394,12 +399,10 @@ static int vc4_plane_setup_clipping_and_scaling(struct drm_plane_state *state)
 
 		vc4_state->x_scaling[1] =
 			vc4_get_scaling_mode(vc4_state->src_w[1],
-					     vc4_state->crtc_w,
-					     v_subsample == 2);
+					     vc4_state->crtc_w);
 		vc4_state->y_scaling[1] =
 			vc4_get_scaling_mode(vc4_state->src_h[1],
-					     vc4_state->crtc_h,
-					     v_subsample == 2);
+					     vc4_state->crtc_h);
 
 		/* YUV conversion requires that horizontal scaling be enabled
 		 * on the UV plane even if vc4_get_scaling_mode() returned
@@ -449,6 +452,7 @@ static void vc4_write_ppf(struct vc4_plane_state *vc4_state, u32 src, u32 dst)
 static u32 vc4_lbm_size(struct drm_plane_state *state)
 {
 	struct vc4_plane_state *vc4_state = to_vc4_plane_state(state);
+	struct vc4_dev *vc4 = to_vc4_dev(state->plane->dev);
 	u32 pix_per_line;
 	u32 lbm;
 
@@ -457,6 +461,13 @@ static u32 vc4_lbm_size(struct drm_plane_state *state)
 	    vc4_state->y_scaling[1] == VC4_SCALING_NONE)
 		return 0;
 
+	/*
+	 * This can be further optimized in the RGB/YUV444 case if the PPF
+	 * decimation factor is between 0.5 and 1.0 by using crtc_w.
+	 *
+	 * It's not an issue though, since in that case since src_w[0] is going
+	 * to be greater than or equal to crtc_w.
+	 */
 	if (vc4_state->x_scaling[0] == VC4_SCALING_TPZ)
 		pix_per_line = vc4_state->crtc_w;
 	else
@@ -477,7 +488,11 @@ static u32 vc4_lbm_size(struct drm_plane_state *state)
 		lbm = pix_per_line * 16;
 	}
 
-	lbm = roundup(lbm, 32);
+	/* Align it to 64 or 128 (hvs5) bytes */
+	lbm = roundup(lbm, vc4->hvs->hvs5 ? 128 : 64);
+
+	/* Each "word" of the LBM memory contains 2 or 4 (hvs5) pixels */
+	lbm /= vc4->hvs->hvs5 ? 4 : 2;
 
 	return lbm;
 }
@@ -977,9 +992,9 @@ static int vc4_plane_mode_set(struct drm_plane *plane,
 		if (!vc4_state->is_unity) {
 			vc4_dlist_write(vc4_state,
 					VC4_SET_FIELD(vc4_state->crtc_w,
-						      SCALER_POS1_SCL_WIDTH) |
+						      SCALER5_POS1_SCL_WIDTH) |
 					VC4_SET_FIELD(vc4_state->crtc_h,
-						      SCALER_POS1_SCL_HEIGHT));
+						      SCALER5_POS1_SCL_HEIGHT));
 		}
 
 		/* Position Word 2: Source Image Size */
@@ -1050,8 +1065,10 @@ static int vc4_plane_mode_set(struct drm_plane *plane,
 		 * be set when calling vc4_plane_allocate_lbm().
 		 */
 		if (vc4_state->y_scaling[0] != VC4_SCALING_NONE ||
-		    vc4_state->y_scaling[1] != VC4_SCALING_NONE)
-			vc4_state->lbm_offset = vc4_state->dlist_count++;
+		    vc4_state->y_scaling[1] != VC4_SCALING_NONE) {
+			vc4_state->lbm_offset = vc4_state->dlist_count;
+			vc4_dlist_counter_increment(vc4_state);
+		}
 
 		if (num_planes > 1) {
 			/* Emit Cb/Cr as channel 0 and Y as channel
@@ -1452,6 +1469,8 @@ struct drm_plane *vc4_plane_init(struct drm_device *dev,
 				       &vc4_plane_funcs,
 				       formats, num_formats,
 				       modifiers, type, NULL);
+	if (ret)
+		return ERR_PTR(ret);
 
 	drm_plane_helper_add(plane, &vc4_plane_helper_funcs);
 

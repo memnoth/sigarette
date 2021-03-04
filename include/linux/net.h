@@ -22,6 +22,7 @@
 #include <linux/once.h>
 #include <linux/fs.h>
 #include <linux/mm.h>
+#include <linux/sockptr.h>
 
 #include <uapi/linux/net.h>
 
@@ -40,6 +41,8 @@ struct net;
 #define SOCK_NOSPACE		2
 #define SOCK_PASSCRED		3
 #define SOCK_PASSSEC		4
+
+#define PROTO_CMSG_DATA_ONLY	0x0001
 
 #ifndef ARCH_HAS_SOCKET_TYPES
 /**
@@ -135,6 +138,7 @@ typedef int (*sk_read_actor_t)(read_descriptor_t *, struct sk_buff *,
 
 struct proto_ops {
 	int		family;
+	unsigned int	flags;
 	struct module	*owner;
 	int		(*release)   (struct socket *sock);
 	int		(*bind)	     (struct socket *sock,
@@ -163,15 +167,10 @@ struct proto_ops {
 	int		(*listen)    (struct socket *sock, int len);
 	int		(*shutdown)  (struct socket *sock, int flags);
 	int		(*setsockopt)(struct socket *sock, int level,
-				      int optname, char __user *optval, unsigned int optlen);
+				      int optname, sockptr_t optval,
+				      unsigned int optlen);
 	int		(*getsockopt)(struct socket *sock, int level,
 				      int optname, char __user *optval, int __user *optlen);
-#ifdef CONFIG_COMPAT
-	int		(*compat_setsockopt)(struct socket *sock, int level,
-				      int optname, char __user *optval, unsigned int optlen);
-	int		(*compat_getsockopt)(struct socket *sock, int level,
-				      int optname, char __user *optval, int __user *optlen);
-#endif
 	void		(*show_fdinfo)(struct seq_file *m, struct socket *sock);
 	int		(*sendmsg)   (struct socket *sock, struct msghdr *m,
 				      size_t total_len);
@@ -241,7 +240,7 @@ int sock_sendmsg(struct socket *sock, struct msghdr *msg);
 int sock_recvmsg(struct socket *sock, struct msghdr *msg, int flags);
 struct file *sock_alloc_file(struct socket *sock, int flags, const char *dname);
 struct socket *sockfd_lookup(int fd, int *err);
-struct socket *sock_from_file(struct file *file, int *err);
+struct socket *sock_from_file(struct file *file);
 #define		     sockfd_put(sock) fput(sock->file)
 int net_ratelimit(void);
 
