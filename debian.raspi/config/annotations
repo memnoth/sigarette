@@ -4,6 +4,13 @@
 
 include "../../debian.master/config/annotations"
 
+CONFIG_MFD_TPS65217				policy<{'*': 'm'}> mark<ENFORCED> note<not a boot essential for raspi>
+CONFIG_SAMPLE_TRACE_PRINTK			policy<{'*': '-'}> mark<ENFORCED> note<not available due to SAMPLES=n>
+
+CONFIG_GPIO_CDEV_V1				policy<{'*': 'y'}> mark<ENFORCED> note<LP: #1919973>
+
+CONFIG_BLK_DEV_NVME				policy<{'*': 'y'}> mark<ENFORCED> note<LP: #1919319>
+
 CONFIG_DRM_DISPLAY_CONNECTOR			policy<{'*': 'm'}> mark<ENFORCED> note<LP: #1916721>
 CONFIG_DRM_SIMPLE_BRIDGE			policy<{'*': 'm'}> mark<ENFORCED> note<LP: #1916721>
 CONFIG_MEDIA_CEC_RC				policy<{'*': 'y'}> mark<ENFORCED> note<LP: #1916721>

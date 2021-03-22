@@ -127,9 +127,12 @@ dtbo-$(CONFIG_ARCH_BCM2835) += \
 	ov9281.dtbo \
 	papirus.dtbo \
 	pca953x.dtbo \
+	pcie-32bit-dma.dtbo \
 	pibell.dtbo \
 	pifacedigital.dtbo \
 	pifi-40.dtbo \
+	pifi-dac-hd.dtbo \
+	pifi-dac-zero.dtbo \
 	pifi-mini-210.dtbo \
 	piglow.dtbo \
 	piscreen.dtbo \

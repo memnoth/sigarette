@@ -4,6 +4,8 @@
 [ ! -L 'arch/arm64/boot/dts/overlays' ] && ln -sf '../../../arm/boot/dts/overlays' 'arch/arm64/boot/dts/overlays'
 # Remove any files deleted from the orig.
 rm -f 'arch/arm/boot/dts/bcm283x-rpi-usb-peripheral.dtsi'
+rm -f 'drivers/pci/pcie/bw_notification.c'
+rm -f 'drivers/staging/mt7621-dma/mtk-hsdma.c'
 chmod +x 'arch/arm/boot/dts/overlays/anyspi-overlay.dts'
 chmod +x 'arch/arm/boot/dts/overlays/gpio-no-bank0-irq-overlay.dts'
 chmod +x 'arch/arm/boot/dts/overlays/mcp2515-can0-overlay.dts'

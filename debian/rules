@@ -43,6 +43,11 @@ ifneq ($(filter noudeb,$(DEB_BUILD_PROFILES)),)
 disable_d_i=true
 endif
 
+# Don't build udebs if $(DEBIAN)/d-i/ doesn't exist
+ifeq ($(wildcard $(DEBIAN)/d-i/.),)
+	disable_d_i=true
+endif
+
 # Don't build tools or udebs in a cross compile environment.
 ifneq ($(DEB_HOST_ARCH),$(DEB_BUILD_ARCH))
 	do_tools=false
@@ -135,10 +140,12 @@ clean: debian/control debian/canonical-certs.pem
 	dh_testroot
 	dh_clean
 
+ifeq ($(disable_d_i),)
 	# d-i stuff
 	rm -rf $(DEBIAN)/d-i-$(arch)
 	# Generated on the fly.
 	rm -f $(DEBIAN)/d-i/firmware/$(arch)/kernel-image
+endif
 
 	# normal build junk
 	rm -rf $(DEBIAN)/abi/$(release)-$(revision)
