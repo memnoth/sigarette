@@ -41,9 +41,9 @@ static struct riscv_cacheinfo_ops l2_cache_ops;
 
 enum {
 	DIR_CORR = 0,
-	DIR_UNCORR,
 	DATA_CORR,
 	DATA_UNCORR,
+	DIR_UNCORR,
 };
 
 #ifdef CONFIG_DEBUG_FS
@@ -194,9 +194,9 @@ static irqreturn_t l2_int_handler(int irq, void *device)
 
 static int __init sifive_l2_init(void)
 {
-	int i, k, rc, intr_num, offset = 0;
 	struct device_node *np;
 	struct resource res;
+	int i, rc, intr_num;
 
 	np = of_find_matching_node(NULL, sifive_l2_ids);
 	if (!np)
@@ -215,27 +215,11 @@ static int __init sifive_l2_init(void)
 		return -ENODEV;
 	}
 
-	/*
-	 * Only FU540 have 3 interrupts. Rest all other variants have
-	 * 4 interrupts (+dirfail). Therefore offset is required to skip
-	 * 'dirfail' interrupt entry in case of FU540
-	 */
-	if (of_device_is_compatible(np, "sifive,fu540-c000-ccache"))
-		offset = 1;
-
-	g_irq[0] = irq_of_parse_and_map(np, 0);
-	rc = request_irq(g_irq[0], l2_int_handler, 0, "l2_ecc", NULL);
-	if (rc) {
-		pr_err("L2CACHE: Could not request IRQ %d\n", g_irq[0]);
-		return rc;
-	}
-
-	for (i = 1; i < intr_num; i++) {
-		k = i + offset;
-		g_irq[k] = irq_of_parse_and_map(np, i);
-		rc = request_irq(g_irq[k], l2_int_handler, 0, "l2_ecc", NULL);
+	for (i = 0; i < intr_num; i++) {
+		g_irq[i] = irq_of_parse_and_map(np, i);
+		rc = request_irq(g_irq[i], l2_int_handler, 0, "l2_ecc", NULL);
 		if (rc) {
-			pr_err("L2CACHE: Could not request IRQ %d\n", g_irq[k]);
+			pr_err("L2CACHE: Could not request IRQ %d\n", g_irq[i]);
 			return rc;
 		}
 	}

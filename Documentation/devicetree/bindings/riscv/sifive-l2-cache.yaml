@@ -55,16 +55,13 @@ properties:
   cache-unified: true
 
   interrupts:
-    description: |
-      Must contain 3 entries for FU540 (DirError, DataError and DataFail) or 4
-      entries for other chips (DirError, DirFail, DataError, DataFail signals)
     minItems: 3
     maxItems: 4
     items:
       - description: DirError interrupt
-      - description: DirFail interrupt
       - description: DataError interrupt
       - description: DataFail interrupt
+      - description: DirFail interrupt
 
   reg:
     maxItems: 1
@@ -93,7 +90,7 @@ else:
   properties:
     interrupts:
       description: |
-        Must contain entries for DirError, DirFail, DataError, DataFail signals.
+        Must contain entries for DirError, DataError, DataFail, DirFail signals.
       minItems: 4
 
 additionalProperties: false
