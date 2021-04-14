@@ -1,3 +1,23 @@
+linux (5.11.0-16.17) hirsute; urgency=medium
+
+  * hirsute beta desktop AMD64 ISO kernel panic on boot when booting using UEFI
+    (LP: #1922403)
+    - SAUCE: efifb: Check efifb_pci_dev before using it
+
+ -- Seth Forshee <seth.forshee@canonical.com>  Wed, 14 Apr 2021 14:31:58 -0500
+
+linux (5.11.0-15.16) hirsute; urgency=medium
+
+  * HP m400 cartridges fail to find NIC when deploying hirsute (LP: #1918793)
+    - PCI: xgene: Fix cfg resource mapping
+
+  * CVE-2021-3492
+    - SAUCE: shiftfs: free allocated memory in shiftfs_btrfs_ioctl_fd_replace()
+      error paths
+    - SAUCE: shiftfs: handle copy_to_user() return values correctly
+
+ -- Seth Forshee <seth.forshee@canonical.com>  Mon, 12 Apr 2021 12:04:48 -0500
+
 linux (5.11.0-14.15) hirsute; urgency=medium
 
   * hirsute/linux: 5.11.0-14.15 -proposed tracker (LP: #1923103)

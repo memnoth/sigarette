@@ -1,3 +1,26 @@
+linux-raspi (5.11.0-1007.7) hirsute; urgency=medium
+
+  [ Ubuntu: 5.11.0-16.17 ]
+
+  * hirsute beta desktop AMD64 ISO kernel panic on boot when booting using UEFI
+    (LP: #1922403)
+    - SAUCE: efifb: Check efifb_pci_dev before using it
+
+ -- Seth Forshee <seth.forshee@canonical.com>  Wed, 14 Apr 2021 16:42:27 -0500
+
+linux-raspi (5.11.0-1006.6) hirsute; urgency=medium
+
+  [ Ubuntu: 5.11.0-15.16 ]
+
+  * HP m400 cartridges fail to find NIC when deploying hirsute (LP: #1918793)
+    - PCI: xgene: Fix cfg resource mapping
+  * CVE-2021-3492
+    - SAUCE: shiftfs: free allocated memory in shiftfs_btrfs_ioctl_fd_replace()
+      error paths
+    - SAUCE: shiftfs: handle copy_to_user() return values correctly
+
+ -- Seth Forshee <seth.forshee@canonical.com>  Mon, 12 Apr 2021 16:28:24 -0500
+
 linux-raspi (5.11.0-1005.5) hirsute; urgency=medium
 
   * hirsute/linux-raspi: 5.11.0-1005.5 -proposed tracker (LP: #1923100)
