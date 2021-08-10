@@ -1,2 +1,2 @@
 obj-y	+= alternative.o
-obj-$(CONFIG_CPU_SIFIVE) += sifive/
+obj-$(CONFIG_ERRATA_SIFIVE) += sifive/

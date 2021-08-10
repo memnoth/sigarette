@@ -987,8 +987,15 @@ Params: <None>
 
 
 Name:   gpio-poweroff
-Info:   Drives a GPIO high or low on poweroff (including halt). Enabling this
-        overlay will prevent the ability to boot by driving GPIO3 low.
+Info:   Drives a GPIO high or low on poweroff (including halt). Using this
+        overlay interferes with the normal power-down sequence, preventing the
+        kernel from resetting the SoC (a necessary step in a normal power-off
+        or reboot). This also disables the ability to trigger a boot by driving
+        GPIO3 low.
+
+        Users of this overlay are required to provide an external mechanism to
+        switch off the power supply when signalled - failure to do so results
+        in a kernel BUG, increased power consumption and undefined behaviour.
 Load:   dtoverlay=gpio-poweroff,<param>=<val>
 Params: gpiopin                 GPIO for signalling (default 26)
 
@@ -1475,11 +1482,15 @@ Params: abx80x                  Select one of the ABx80x family:
 
 
 Name:   i2c-sensor
-Info:   Adds support for a number of I2C barometric pressure and temperature
-        sensors on i2c_arm
+Info:   Adds support for a number of I2C barometric pressure, temperature,
+        light level and chemical sensors on i2c_arm
 Load:   dtoverlay=i2c-sensor,<param>=<val>
-Params: addr                    Set the address for the BME280, BME680, BMP280,
-                                DS1621, HDC100X, LM75, SHT3x or TMP102
+Params: addr                    Set the address for the BH1750, BME280, BME680,
+                                BMP280, CCS811, DS1621, HDC100X, LM75, SHT3x or
+                                TMP102
+
+        bh1750                  Select the Rohm BH1750 ambient light sensor
+                                Valid addresses 0x23 or 0x5c, default 0x23
 
         bme280                  Select the Bosch Sensortronic BME280
                                 Valid addresses 0x76-0x77, default 0x76
@@ -1493,6 +1504,9 @@ Params: addr                    Set the address for the BME280, BME680, BMP280,
 
         bmp280                  Select the Bosch Sensortronic BMP280
                                 Valid addresses 0x76-0x77, default 0x76
+
+        ccs811                  Select the AMS CCS811 digital gas sensor
+                                Valid addresses 0x5a-0x5b, default 0x5b
 
         ds1621                  Select the Dallas Semiconductors DS1621 temp
                                 sensor. Valid addresses 0x48-0x4f, default 0x48
@@ -1519,6 +1533,9 @@ Params: addr                    Set the address for the BME280, BME680, BMP280,
 
         sps30                   Select the Sensirion SPS30 particulate matter
                                 sensor. Fixed address 0x69.
+
+        sgp30                   Select the Sensirion SGP30 VOC sensor.
+                                Fixed address 0x58.
 
         tmp102                  Select the Texas Instruments TMP102 temp sensor
                                 Valid addresses 0x48-0x4b, default 0x48
@@ -2000,8 +2017,8 @@ Params: speed                   Display SPI bus speed
 
 Name:   merus-amp
 Info:   Configures the merus-amp audio card
-Load:   dtoverlay=merus-amp,<param>=<val>
-Params: spioff                  Turn SPI bus off
+Load:   dtoverlay=merus-amp
+Params: <None>
 
 
 Name:   midi-uart0
@@ -2488,6 +2505,27 @@ Params: poe_fan_temp0           Temperature (in millicelcius) at which the fan
                                 the fan slows down (default 5000)
 
 
+Name:   rpi-poe-plus
+Info:   Raspberry Pi PoE+ HAT fan
+Load:   dtoverlay=rpi-poe-plus,<param>[=<val>]
+Params: poe_fan_temp0           Temperature (in millicelcius) at which the fan
+                                turns on (default 40000)
+        poe_fan_temp0_hyst      Temperature delta (in millicelcius) at which
+                                the fan turns off (default 2000)
+        poe_fan_temp1           Temperature (in millicelcius) at which the fan
+                                speeds up (default 45000)
+        poe_fan_temp1_hyst      Temperature delta (in millicelcius) at which
+                                the fan slows down (default 2000)
+        poe_fan_temp2           Temperature (in millicelcius) at which the fan
+                                speeds up (default 50000)
+        poe_fan_temp2_hyst      Temperature delta (in millicelcius) at which
+                                the fan slows down (default 2000)
+        poe_fan_temp3           Temperature (in millicelcius) at which the fan
+                                speeds up (default 55000)
+        poe_fan_temp3_hyst      Temperature delta (in millicelcius) at which
+                                the fan slows down (default 5000)
+
+
 Name:   rpi-proto
 Info:   Configures the RPi Proto audio card
 Load:   dtoverlay=rpi-proto
@@ -2689,7 +2727,17 @@ Params: <None>
 Name:   spi-rtc
 Info:   Adds support for a number of SPI Real Time Clock devices
 Load:   dtoverlay=spi-rtc,<param>=<val>
-Params: pcf2123                 Select the PCF2123 device
+Params: ds3232                  Select the DS3232 device
+        ds3234                  Select the DS3234 device
+        pcf2123                 Select the PCF2123 device
+
+        spi0_0                  Use spi0.0 (default)
+        spi0_1                  Use spi0.1
+        spi1_0                  Use spi1.0
+        spi1_1                  Use spi1.1
+        spi2_0                  Use spi2.0
+        spi2_1                  Use spi2.1
+        cs_high                 This device requires an active-high CS
 
 
 Name:   spi0-1cs
@@ -3113,6 +3161,16 @@ Load:   dtoverlay=udrc,<param>=<val>
 Params: alsaname                Name of the ALSA audio device (default "udrc")
 
 
+Name:   ugreen-dabboard
+Info:   Configures the ugreen-dabboard I2S overlay
+        This is a simple overlay based on the simple-audio-card and the dmic
+        codec. It has the speciality that it is configured to use the codec
+        as a master I2S device. It works for example with the Si468x DAB
+        receiver on the uGreen DABBoard.
+Load:   dtoverlay=ugreen-dabboard,<param>=<val>
+Params: card-name               Override the default, "dabboard", card name.
+
+
 Name:   upstream
 Info:   Allow usage of downstream .dtb with upstream kernel. Comprises the
         vc4-kms-v3d and dwc2 overlays.
@@ -3155,6 +3213,27 @@ Info:   Enable the Raspberry Pi DSI 7" screen.
         Use edt-ft5406 for the touchscreen element.
         Requires vc4-kms-v3d to be loaded.
 Load:   dtoverlay=vc4-kms-dsi-7inch
+Params: <None>
+
+
+Name:   vc4-kms-dsi-lt070me05000
+Info:   Enable a JDI LT070ME05000 DSI display on DSI1.
+        Note that this is a 4 lane DSI device, so it will only work on a Compute
+        Module.
+        Requires vc4-kms-v3d to be loaded.
+Load:   dtoverlay=vc4-kms-dsi-lt070me05000,<param>
+Params: reset                   GPIO for the reset signal (default 17)
+        enable                  GPIO for the enable signal (default 4)
+        dcdc-en                 GPIO for the DC-DC converter enable (default 5)
+
+
+Name:   vc4-kms-dsi-lt070me05000-v2
+Info:   Enable a JDI LT070ME05000 DSI display on DSI1 using Harlab's V2
+        interface board.
+        Note that this is a 4 lane DSI device, so it will only work on a Compute
+        Module.
+        Requires vc4-kms-v3d to be loaded.
+Load:   dtoverlay=vc4-kms-dsi-lt070me05000-v2
 Params: <None>
 
 

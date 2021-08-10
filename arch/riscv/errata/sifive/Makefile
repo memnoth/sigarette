@@ -1,2 +1,2 @@
-obj-y += altern_ops.o
-obj-y += errata_cip_453.o
+obj-$(CONFIG_ERRATA_SIFIVE_CIP_453) += errata_cip_453.o
+obj-y += errata.o

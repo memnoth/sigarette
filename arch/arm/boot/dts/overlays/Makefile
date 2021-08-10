@@ -156,6 +156,7 @@ dtbo-$(CONFIG_ARCH_BCM2835) += \
 	rpi-display.dtbo \
 	rpi-ft5406.dtbo \
 	rpi-poe.dtbo \
+	rpi-poe-plus.dtbo \
 	rpi-proto.dtbo \
 	rpi-sense.dtbo \
 	rpi-tv.dtbo \
@@ -209,10 +210,13 @@ dtbo-$(CONFIG_ARCH_BCM2835) += \
 	uart4.dtbo \
 	uart5.dtbo \
 	udrc.dtbo \
+	ugreen-dabboard.dtbo \
 	upstream.dtbo \
 	upstream-pi4.dtbo \
 	vc4-fkms-v3d.dtbo \
 	vc4-kms-dsi-7inch.dtbo \
+	vc4-kms-dsi-lt070me05000.dtbo \
+	vc4-kms-dsi-lt070me05000-v2.dtbo \
 	vc4-kms-kippah-7inch.dtbo \
 	vc4-kms-v3d.dtbo \
 	vc4-kms-v3d-pi4.dtbo \

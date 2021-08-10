@@ -9,39 +9,46 @@
 #include <linux/init.h>
 #include <linux/cpu.h>
 #include <linux/uaccess.h>
-#include <asm/patch.h>
 #include <asm/alternative.h>
 #include <asm/sections.h>
+#include <asm/vendorid_list.h>
+#include <asm/sbi.h>
+#include <asm/csr.h>
 
-struct alt_region {
-	struct alt_entry *begin;
-	struct alt_entry *end;
-};
+static struct cpu_manufacturer_info_t {
+	unsigned long vendor_id;
+	unsigned long arch_id;
+	unsigned long imp_id;
+} cpu_mfr_info;
 
-static bool (*errata_checkfunc)(struct alt_entry *alt);
-typedef int (*patch_func_t)(void *addr, const void *insn, size_t size);
+static void (*vendor_patch_func)(struct alt_entry *begin, struct alt_entry *end,
+				 unsigned long archid, unsigned long impid);
 
-static void __apply_alternatives(void *alt_region, void *alt_patch_func)
+static inline void __init riscv_fill_cpu_mfr_info(void)
 {
-	struct alt_entry *alt;
-	struct alt_region *region = alt_region;
-
-	for (alt = region->begin; alt < region->end; alt++) {
-		if (!errata_checkfunc(alt))
-			continue;
-		((patch_func_t)alt_patch_func)(alt->old_ptr, alt->alt_ptr, alt->alt_len);
-	}
+#ifdef CONFIG_RISCV_M_MODE
+	cpu_mfr_info.vendor_id = csr_read(CSR_MVENDORID);
+	cpu_mfr_info.arch_id = csr_read(CSR_MARCHID);
+	cpu_mfr_info.imp_id = csr_read(CSR_MIMPID);
+#else
+	cpu_mfr_info.vendor_id = sbi_get_mvendorid();
+	cpu_mfr_info.arch_id = sbi_get_marchid();
+	cpu_mfr_info.imp_id = sbi_get_mimpid();
+#endif
 }
 
 static void __init init_alternative(void)
 {
-	struct errata_checkfunc_id *ptr;
+	riscv_fill_cpu_mfr_info();
 
-	for (ptr = (struct errata_checkfunc_id *)__alt_checkfunc_table;
-	     ptr < (struct errata_checkfunc_id *)__alt_checkfunc_table_end;
-	     ptr++) {
-		if (cpu_mfr_info.vendor_id == ptr->vendor_id)
-			errata_checkfunc = ptr->func;
+	switch (cpu_mfr_info.vendor_id) {
+#ifdef CONFIG_ERRATA_SIFIVE
+	case SIFIVE_VENDOR_ID:
+		vendor_patch_func = sifive_errata_patch_func;
+		break;
+#endif
+	default:
+		vendor_patch_func = NULL;
 	}
 }
 
@@ -52,18 +59,16 @@ static void __init init_alternative(void)
  */
 void __init apply_boot_alternatives(void)
 {
-	struct alt_region region;
-
 	/* If called on non-boot cpu things could go wrong */
 	WARN_ON(smp_processor_id() != 0);
 
 	init_alternative();
 
-	if (!errata_checkfunc)
+	if (!vendor_patch_func)
 		return;
 
-	region.begin = (struct alt_entry *)__alt_start;
-	region.end = (struct alt_entry *)__alt_end;
-	__apply_alternatives(&region, patch_text_nosync);
+	vendor_patch_func((struct alt_entry *)__alt_start,
+			  (struct alt_entry *)__alt_end,
+			  cpu_mfr_info.arch_id, cpu_mfr_info.imp_id);
 }
 

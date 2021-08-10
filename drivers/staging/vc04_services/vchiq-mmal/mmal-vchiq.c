@@ -443,7 +443,7 @@ buffer_from_host(struct vchiq_mmal_instance *instance,
 		m.u.buffer_from_host.buffer_header.dts = buf->dts;
 	}
 
-	/* clear buffer type sepecific data */
+	/* clear buffer type specific data */
 	memset(&m.u.buffer_from_host.buffer_header_type_specific, 0,
 	       sizeof(m.u.buffer_from_host.buffer_header_type_specific));
 
@@ -1051,7 +1051,7 @@ release_msg:
 	return ret;
 }
 
-/* create comonent on vc */
+/* create component on vc */
 static int create_component(struct vchiq_mmal_instance *instance,
 			    struct vchiq_mmal_component *component,
 			    const char *name)

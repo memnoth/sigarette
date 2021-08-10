@@ -21,8 +21,9 @@ enum {
 	PARAMCOUNT
 };
 
-static __initdata u32 __secure_boot = efi_secureboot_mode_unset;
-u32 __init efi_get__secure_boot(void) {
+static u32 __secure_boot __initdata = efi_secureboot_mode_unset;
+u32 __init efi_get__secure_boot(void)
+{
 	return __secure_boot;
 }
 
@@ -106,6 +107,9 @@ u64 __init efi_get_fdt_params(struct efi_memory_map_data *mm)
 
 	BUILD_BUG_ON(ARRAY_SIZE(target) != ARRAY_SIZE(name));
 	BUILD_BUG_ON(ARRAY_SIZE(target) != ARRAY_SIZE(dt_params[0].params));
+
+	if (!fdt)
+		return 0;
 
 	for (i = 0; i < ARRAY_SIZE(dt_params); i++) {
 		node = fdt_path_offset(fdt, dt_params[i].path);

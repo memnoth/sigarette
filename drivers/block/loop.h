@@ -22,6 +22,7 @@ enum {
 	Lo_unbound,
 	Lo_bound,
 	Lo_rundown,
+	Lo_deleting,
 };
 
 struct loop_func_table;
@@ -46,7 +47,7 @@ struct loop_device {
 	int		(*ioctl)(struct loop_device *, int cmd, 
 				 unsigned long arg); 
 
-	struct file	*lo_backing_file, *lo_backing_virt_file;
+	struct file *	lo_backing_file;
 	struct block_device *lo_device;
 	void		*key_data; 
 
@@ -62,6 +63,7 @@ struct loop_device {
 	struct request_queue	*lo_queue;
 	struct blk_mq_tag_set	tag_set;
 	struct gendisk		*lo_disk;
+	struct mutex		lo_mutex;
 };
 
 struct loop_cmd {

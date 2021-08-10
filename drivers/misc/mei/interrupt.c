@@ -277,6 +277,9 @@ static int mei_cl_irq_read(struct mei_cl *cl, struct mei_cl_cb *cb,
 		return ret;
 	}
 
+	pm_runtime_mark_last_busy(dev->dev);
+	pm_request_autosuspend(dev->dev);
+
 	list_move_tail(&cb->list, &cl->rd_pending);
 
 	return 0;
@@ -544,6 +547,16 @@ int mei_irq_write_handler(struct mei_device *dev, struct list_head *cmpl_list)
 		case MEI_FOP_NOTIFY_START:
 		case MEI_FOP_NOTIFY_STOP:
 			ret = mei_cl_irq_notify(cl, cb, cmpl_list);
+			if (ret)
+				return ret;
+			break;
+		case MEI_FOP_DMA_MAP:
+			ret = mei_cl_irq_dma_map(cl, cb, cmpl_list);
+			if (ret)
+				return ret;
+			break;
+		case MEI_FOP_DMA_UNMAP:
+			ret = mei_cl_irq_dma_unmap(cl, cb, cmpl_list);
 			if (ret)
 				return ret;
 			break;

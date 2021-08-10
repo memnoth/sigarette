@@ -12,6 +12,11 @@
 #include "fu540-prci.h"
 #include "fu740-prci.h"
 
+static const struct prci_clk_desc prci_clk_fu540 = {
+	.clks = __prci_init_clocks_fu540,
+	.num_clks = ARRAY_SIZE(__prci_init_clocks_fu540),
+};
+
 /*
  * Private functions
  */
@@ -467,7 +472,7 @@ int sifive_prci_pcie_aux_clock_enable(struct clk_hw *hw)
 {
 	struct __prci_clock *pc = clk_hw_to_prci_clock(hw);
 	struct __prci_data *pd = pc->pd;
-	u32 r;
+	u32 r __maybe_unused;
 
 	if (sifive_prci_pcie_aux_clock_is_enabled(hw))
 		return 0;
@@ -482,7 +487,7 @@ void sifive_prci_pcie_aux_clock_disable(struct clk_hw *hw)
 {
 	struct __prci_clock *pc = clk_hw_to_prci_clock(hw);
 	struct __prci_data *pd = pc->pd;
-	u32 r;
+	u32 r __maybe_unused;
 
 	__prci_writel(0, PRCI_PCIE_AUX_OFFSET, pd);
 	r = __prci_readl(pd, PRCI_PCIE_AUX_OFFSET);	/* barrier */

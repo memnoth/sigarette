@@ -214,7 +214,7 @@ static struct snd_soc_dai_link audioinjector_octo_dai[] = {
 		.stream_name = "AudioInject-HIFI",
 		.ops = &audioinjector_octo_ops,
 		.init = audioinjector_octo_dai_init,
-		.symmetric_rates = 1,
+		.symmetric_rate = 1,
 		.symmetric_channels = 1,
 		SND_SOC_DAILINK_REG(audioinjector_octo),
 	},

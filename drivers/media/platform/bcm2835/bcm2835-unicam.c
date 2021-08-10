@@ -72,6 +72,9 @@
 #include <media/v4l2-fwnode.h>
 #include <media/videobuf2-dma-contig.h>
 
+#include <media/v4l2-async.h>
+#define v4l2_async_notifier_add_subdev __v4l2_async_notifier_add_subdev
+
 #include "vc4-regs-unicam.h"
 
 #define UNICAM_MODULE_NAME	"unicam"
@@ -426,6 +429,8 @@ struct unicam_device {
 	struct clk *clock;
 	/* vpu clock handle */
 	struct clk *vpu_clock;
+	/* vpu clock request */
+	struct clk_request *vpu_req;
 	/* clock status for error handling */
 	bool clocks_enabled;
 	/* V4l2 device */
@@ -1691,8 +1696,8 @@ static int unicam_start_streaming(struct vb2_queue *vq, unsigned int count)
 	unicam_dbg(1, dev, "Running with %u data lanes\n",
 		   dev->active_data_lanes);
 
-	ret = clk_set_min_rate(dev->vpu_clock, MIN_VPU_CLOCK_RATE);
-	if (ret) {
+	dev->vpu_req = clk_request_start(dev->vpu_clock, MIN_VPU_CLOCK_RATE);
+	if (!dev->vpu_req) {
 		unicam_err(dev, "failed to set up VPU clock\n");
 		goto err_pm_put;
 	}
@@ -1748,8 +1753,7 @@ err_disable_unicam:
 	unicam_disable(dev);
 	clk_disable_unprepare(dev->clock);
 err_vpu_clock:
-	if (clk_set_min_rate(dev->vpu_clock, 0))
-		unicam_err(dev, "failed to reset the VPU clock\n");
+	clk_request_done(dev->vpu_req);
 	clk_disable_unprepare(dev->vpu_clock);
 err_pm_put:
 	unicam_runtime_put(dev);
@@ -1779,9 +1783,7 @@ static void unicam_stop_streaming(struct vb2_queue *vq)
 		unicam_disable(dev);
 
 		if (dev->clocks_enabled) {
-			if (clk_set_min_rate(dev->vpu_clock, 0))
-				unicam_err(dev, "failed to reset the min VPU clock\n");
-
+			clk_request_done(dev->vpu_req);
 			clk_disable_unprepare(dev->vpu_clock);
 			clk_disable_unprepare(dev->clock);
 			dev->clocks_enabled = false;

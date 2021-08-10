@@ -12,8 +12,6 @@
 #include <asm/unistd.h>
 #include <asm/thread_info.h>
 #include <asm/asm-offsets.h>
-#include <asm/alternative.h>
-#include <asm/vendorid_list.h>
 #include <asm/errata_list.h>
 
 #if !IS_ENABLED(CONFIG_PREEMPTION)
@@ -133,6 +131,9 @@ skip_context_tracking:
 	 */
 	andi t0, s1, SR_PIE
 	beqz t0, 1f
+	/* kprobes, entered via ebreak, must have interrupts disabled. */
+	li t0, EXC_BREAKPOINT
+	beq s4, t0, 1f
 #ifdef CONFIG_TRACE_IRQFLAGS
 	call trace_hardirqs_on
 #endif
@@ -454,9 +455,7 @@ ENDPROC(__switch_to)
 	/* Exception vector table */
 ENTRY(excp_vect_table)
 	RISCV_PTR do_trap_insn_misaligned
-	ALTERNATIVE(__stringify(RISCV_PTR do_trap_insn_fault),
-		    __stringify(RISCV_PTR do_trap_insn_fault_trampoline),
-		    SIFIVE_VENDOR_ID, ERRATA_CIP_453, CONFIG_ERRATA_SIFIVE_CIP_453)
+	ALT_INSN_FAULT(RISCV_PTR do_trap_insn_fault)
 	RISCV_PTR do_trap_insn_illegal
 	RISCV_PTR do_trap_break
 	RISCV_PTR do_trap_load_misaligned
@@ -468,9 +467,7 @@ ENTRY(excp_vect_table)
 	RISCV_PTR do_trap_unknown
 	RISCV_PTR do_trap_ecall_m
 	/* instruciton page fault */
-	ALTERNATIVE(__stringify(RISCV_PTR do_page_fault),
-		    __stringify(RISCV_PTR do_page_fault_trampoline),
-		    SIFIVE_VENDOR_ID, ERRATA_CIP_453, CONFIG_ERRATA_SIFIVE_CIP_453)
+	ALT_PAGE_FAULT(RISCV_PTR do_page_fault)
 	RISCV_PTR do_page_fault   /* load page fault */
 	RISCV_PTR do_trap_unknown
 	RISCV_PTR do_page_fault   /* store page fault */

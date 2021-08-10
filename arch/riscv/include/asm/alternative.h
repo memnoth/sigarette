@@ -32,13 +32,8 @@ struct errata_checkfunc_id {
 	bool (*func)(struct alt_entry *alt);
 };
 
-extern struct cpu_manufacturer_info_t cpu_mfr_info;
+void sifive_errata_patch_func(struct alt_entry *begin, struct alt_entry *end,
+			      unsigned long archid, unsigned long impid);
 
-#define REGISTER_ERRATA_CHECKFUNC(checkfunc, vendorid)			  \
-	static const struct errata_checkfunc_id _errata_check_##vendorid  \
-	__used __section(".alt_checkfunc_table")			  \
-	__aligned(__alignof__(struct errata_checkfunc_id)) =		  \
-	{ .vendor_id = vendorid,					  \
-	  .func = checkfunc }
 #endif
 #endif

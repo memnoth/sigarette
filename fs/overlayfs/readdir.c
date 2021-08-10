@@ -319,18 +319,6 @@ static inline int ovl_dir_read(struct path *realpath,
 	return err;
 }
 
-/*
- * Can we iterate real dir directly?
- *
- * Non-merge dir may contain whiteouts from a time it was a merge upper, before
- * lower dir was removed under it and possibly before it was rotated from upper
- * to lower layer.
- */
-static bool ovl_dir_is_real(struct dentry *dir)
-{
-	return !ovl_test_flag(OVL_WHITEOUTS, d_inode(dir));
-}
-
 static void ovl_dir_reset(struct file *file)
 {
 	struct ovl_dir_file *od = file->private_data;
@@ -369,12 +357,6 @@ static int ovl_dir_read_merged(struct dentry *dentry, struct list_head *list,
 	for (idx = 0; idx != -1; idx = next) {
 		next = ovl_path_next(idx, dentry, &realpath);
 		rdd.is_upper = ovl_dentry_upper(dentry) == realpath.dentry;
-
-		err = ovl_creator_permission(dentry->d_sb,
-					     d_inode(realpath.dentry),
-					     MAY_READ);
-		if (err)
-			break;
 
 		if (next != -1) {
 			err = ovl_dir_read(&realpath, &rdd);
@@ -758,12 +740,6 @@ static int ovl_iterate(struct file *file, struct dir_context *ctx)
 		ovl_dir_reset(file);
 
 	if (od->is_real) {
-		err = ovl_creator_permission(dentry->d_sb,
-					     file_inode(od->realfile),
-					     MAY_READ);
-		if (err)
-			return err;
-
 		/*
 		 * If parent is merge, then need to adjust d_ino for '..', if
 		 * dir is impure then need to adjust d_ino for copied up
@@ -975,10 +951,6 @@ const struct file_operations ovl_dir_operations = {
 	.llseek		= ovl_dir_llseek,
 	.fsync		= ovl_dir_fsync,
 	.release	= ovl_dir_release,
-	.unlocked_ioctl	= ovl_ioctl,
-#ifdef CONFIG_COMPAT
-	.compat_ioctl	= ovl_compat_ioctl,
-#endif
 };
 
 int ovl_check_empty_dir(struct dentry *dentry, struct list_head *list)

@@ -227,14 +227,14 @@ static int ringbuf_map_mmap(struct bpf_map *map, struct vm_area_struct *vma)
 
 	rb_map = container_of(map, struct bpf_ringbuf_map, map);
 
-	if (vma->vm_flags & VM_WRITE)
+	if (vma->vm_flags & VM_WRITE) {
 		/* allow writable mapping for the consumer_pos only */
 		if (vma->vm_pgoff != 0 || vma->vm_end - vma->vm_start != PAGE_SIZE)
 			return -EPERM;
-	else
+	} else {
 		vma->vm_flags &= ~VM_MAYWRITE;
-
-		/* remap_vmalloc_range() checks size and offset constraints */
+	}
+	/* remap_vmalloc_range() checks size and offset constraints */
 	return remap_vmalloc_range(vma, rb_map->rb,
 				   vma->vm_pgoff + RINGBUF_PGOFF);
 }
