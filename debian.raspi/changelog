@@ -1,3 +1,12 @@
+linux-raspi (5.13.0-1006.7) impish; urgency=medium
+
+  * impish/linux-raspi: 5.13.0-1006.7 -proposed tracker (LP: #1941058)
+
+  * Miscellaneous Ubuntu changes
+    - [Config] update configs with new toolchain versions
+
+ -- Dimitri John Ledkov <dimitri.ledkov@canonical.com>  Wed, 25 Aug 2021 10:42:56 +0100
+
 linux-raspi (5.13.0-1005.6) impish; urgency=medium
 
   * impish/linux-raspi: 5.13.0-1005.6 -proposed tracker (LP: #1938560)
