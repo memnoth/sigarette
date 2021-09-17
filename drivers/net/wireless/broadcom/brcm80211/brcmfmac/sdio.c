@@ -628,8 +628,8 @@ BRCMF_FW_DEF(4373, "brcmfmac4373-sdio");
 BRCMF_FW_DEF(43012, "brcmfmac43012-sdio");
 
 /* firmware config files */
-MODULE_FIRMWARE(BRCMF_FW_DEFAULT_PATH "brcm/brcmfmac*-sdio.*.txt");
-MODULE_FIRMWARE(BRCMF_FW_DEFAULT_PATH "brcm/brcmfmac*-pcie.*.txt");
+MODULE_FIRMWARE(BRCMF_FW_DEFAULT_PATH "brcmfmac*-sdio.*.txt");
+MODULE_FIRMWARE(BRCMF_FW_DEFAULT_PATH "brcmfmac*-pcie.*.txt");
 
 static const struct brcmf_firmware_mapping brcmf_sdio_fwnames[] = {
 	BRCMF_FW_ENTRY(BRCM_CC_43143_CHIP_ID, 0xFFFFFFFF, 43143),
@@ -4122,14 +4122,24 @@ brcmf_sdio_watchdog(struct timer_list *t)
 }
 
 static
-int brcmf_sdio_get_fwname(struct device *dev, const char *ext, u8 *fw_name)
+int brcmf_sdio_get_fwname(struct device *dev, const char *ext, u8 *fw_name,
+			  bool board_specific)
 {
 	struct brcmf_bus *bus_if = dev_get_drvdata(dev);
+	struct brcmf_sdio_dev *sdiodev = bus_if->bus_priv.sdio;
 	struct brcmf_fw_request *fwreq;
+	u8 board_ext[BRCMF_FW_NAME_LEN];
 	struct brcmf_fw_name fwnames[] = {
 		{ ext, fw_name },
 	};
 
+	if (board_specific) {
+		strlcpy(board_ext, ".", BRCMF_FW_NAME_LEN);
+		strlcat(board_ext, sdiodev->settings->board_type,
+			BRCMF_FW_NAME_LEN);
+		strlcat(board_ext, ext, BRCMF_FW_NAME_LEN);
+		fwnames[0].extension = board_ext;
+	}
 	fwreq = brcmf_fw_alloc_request(bus_if->chip, bus_if->chiprev,
 				       brcmf_sdio_fwnames,
 				       ARRAY_SIZE(brcmf_sdio_fwnames),
@@ -4165,7 +4175,6 @@ static int brcmf_sdio_bus_reset(struct device *dev)
 	if (ret) {
 		brcmf_err("Failed to probe after sdio device reset: ret %d\n",
 			  ret);
-		brcmf_sdiod_remove(sdiodev);
 	}
 
 	return ret;

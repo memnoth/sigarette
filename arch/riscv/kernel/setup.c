@@ -230,8 +230,8 @@ static void __init init_resources(void)
 	}
 
 	/* Clean-up any unused pre-allocated resources */
-	mem_res_sz = (num_resources - res_idx + 1) * sizeof(*mem_res);
-	memblock_free(__pa(mem_res), mem_res_sz);
+	if (res_idx >= 0)
+		memblock_free(__pa(mem_res), (res_idx + 1) * sizeof(*mem_res));
 	return;
 
  error:
@@ -309,8 +309,6 @@ void __init setup_arch(char **cmdline_p)
 #endif
 
 	riscv_fill_hwcap();
-
-	riscv_fill_cpu_manufacturer_info();
 }
 
 static int __init topology_init(void)

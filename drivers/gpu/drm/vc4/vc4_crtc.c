@@ -279,27 +279,15 @@ static u32 vc4_crtc_get_fifo_full_level_bits(struct vc4_crtc *vc4_crtc,
  * allows drivers to push pixels to more than one encoder from the
  * same CRTC.
  */
-static struct drm_encoder *vc4_get_crtc_encoder(struct drm_crtc *crtc,
-						struct drm_atomic_state *state,
-						struct drm_connector_state *(*get_state)(struct drm_atomic_state *state,
-											 struct drm_connector *connector))
+struct drm_encoder *vc4_get_crtc_encoder(struct drm_crtc *crtc,
+					 struct drm_crtc_state *state)
 {
-	struct drm_connector *connector;
-	struct drm_connector_list_iter conn_iter;
+	struct drm_encoder *encoder;
 
-	drm_connector_list_iter_begin(crtc->dev, &conn_iter);
-	drm_for_each_connector_iter(connector, &conn_iter) {
-		struct drm_connector_state *conn_state = get_state(state, connector);
+	WARN_ON(hweight32(state->encoder_mask) > 1);
 
-		if (!conn_state)
-			continue;
-
-		if (conn_state->crtc == crtc) {
-			drm_connector_list_iter_end(&conn_iter);
-			return connector->encoder;
-		}
-	}
-	drm_connector_list_iter_end(&conn_iter);
+	drm_for_each_encoder_mask(encoder, crtc->dev, state->encoder_mask)
+		return encoder;
 
 	return NULL;
 }
@@ -313,12 +301,11 @@ static void vc4_crtc_pixelvalve_reset(struct drm_crtc *crtc)
 	CRTC_WRITE(PV_CONTROL, CRTC_READ(PV_CONTROL) | PV_CONTROL_FIFO_CLR);
 }
 
-static void vc4_crtc_config_pv(struct drm_crtc *crtc, struct drm_atomic_state *state)
+static void vc4_crtc_config_pv(struct drm_crtc *crtc, struct drm_encoder *encoder,
+			       struct drm_atomic_state *state)
 {
 	struct drm_device *dev = crtc->dev;
 	struct vc4_dev *vc4 = to_vc4_dev(dev);
-	struct drm_encoder *encoder = vc4_get_crtc_encoder(crtc, state,
-							   drm_atomic_get_new_connector_state);
 	struct vc4_encoder *vc4_encoder = to_vc4_encoder(encoder);
 	struct vc4_crtc *vc4_crtc = to_vc4_crtc(crtc);
 	const struct vc4_pv_data *pv_data = vc4_crtc_to_vc4_pv_data(vc4_crtc);
@@ -329,8 +316,14 @@ static void vc4_crtc_config_pv(struct drm_crtc *crtc, struct drm_atomic_state *s
 	bool is_dsi = (vc4_encoder->type == VC4_ENCODER_TYPE_DSI0 ||
 		       vc4_encoder->type == VC4_ENCODER_TYPE_DSI1);
 	bool is_dsi1 = vc4_encoder->type == VC4_ENCODER_TYPE_DSI1;
+	bool is_vec = vc4_encoder->type == VC4_ENCODER_TYPE_VEC;
 	u32 format = is_dsi1 ? PV_CONTROL_FORMAT_DSIV_24 : PV_CONTROL_FORMAT_24;
 	u8 ppc = pv_data->pixels_per_clock;
+
+	u16 vert_bp = mode->crtc_vtotal - mode->crtc_vsync_end;
+	u16 vert_sync = mode->crtc_vsync_end - mode->crtc_vsync_start;
+	u16 vert_fp = mode->crtc_vsync_start - mode->crtc_vdisplay;
+
 	bool debug_dump_regs = false;
 
 	if (debug_dump_regs) {
@@ -354,47 +347,58 @@ static void vc4_crtc_config_pv(struct drm_crtc *crtc, struct drm_atomic_state *s
 		   VC4_SET_FIELD(mode->hdisplay * pixel_rep / ppc,
 				 PV_HORZB_HACTIVE));
 
-	CRTC_WRITE(PV_VERTA,
-		   VC4_SET_FIELD(mode->crtc_vtotal - mode->crtc_vsync_end,
-				 PV_VERTA_VBP) |
-		   VC4_SET_FIELD(mode->crtc_vsync_end - mode->crtc_vsync_start,
-				 PV_VERTA_VSYNC));
-	CRTC_WRITE(PV_VERTB,
-		   VC4_SET_FIELD(mode->crtc_vsync_start - mode->crtc_vdisplay,
-				 PV_VERTB_VFP) |
-		   VC4_SET_FIELD(mode->crtc_vdisplay, PV_VERTB_VACTIVE));
-
 	if (interlace) {
+		bool odd_field_first = false;
+		u32 field_delay = mode->htotal * pixel_rep / (2 * ppc);
+		u16 vert_bp_even = vert_bp;
+		u16 vert_fp_even = vert_fp;
+
+		if (is_vec) {
+			/* VEC (composite output) */
+			++field_delay;
+			if (mode->htotal == 858) {
+				/* 525-line mode (NTSC or PAL-M) */
+				odd_field_first = true;
+			}
+		}
+
+		if (odd_field_first)
+			++vert_fp_even;
+		else
+			++vert_bp;
+
 		CRTC_WRITE(PV_VERTA_EVEN,
-			   VC4_SET_FIELD(mode->crtc_vtotal -
-					 mode->crtc_vsync_end - 1,
-					 PV_VERTA_VBP) |
-			   VC4_SET_FIELD(mode->crtc_vsync_end -
-					 mode->crtc_vsync_start,
-					 PV_VERTA_VSYNC));
+			   VC4_SET_FIELD(vert_bp_even, PV_VERTA_VBP) |
+			   VC4_SET_FIELD(vert_sync, PV_VERTA_VSYNC));
 		CRTC_WRITE(PV_VERTB_EVEN,
-			   VC4_SET_FIELD(mode->crtc_vsync_start -
-					 mode->crtc_vdisplay,
-					 PV_VERTB_VFP) |
+			   VC4_SET_FIELD(vert_fp_even, PV_VERTB_VFP) |
 			   VC4_SET_FIELD(mode->crtc_vdisplay, PV_VERTB_VACTIVE));
 
-		/* We set up first field even mode for HDMI.  VEC's
-		 * NTSC mode would want first field odd instead, once
-		 * we support it (to do so, set ODD_FIRST and put the
-		 * delay in VSYNCD_EVEN instead).
+		/* We set up first field even mode for HDMI and VEC's PAL.
+		 * For NTSC, we need first field odd.
 		 */
 		CRTC_WRITE(PV_V_CONTROL,
 			   PV_VCONTROL_CONTINUOUS |
 			   (is_dsi ? PV_VCONTROL_DSI : 0) |
 			   PV_VCONTROL_INTERLACE |
-			   VC4_SET_FIELD(mode->htotal * pixel_rep / 2,
-					 PV_VCONTROL_ODD_DELAY));
-		CRTC_WRITE(PV_VSYNCD_EVEN, 0);
+			   (odd_field_first
+				   ? PV_VCONTROL_ODD_FIRST
+				   : VC4_SET_FIELD(field_delay,
+						   PV_VCONTROL_ODD_DELAY)));
+		CRTC_WRITE(PV_VSYNCD_EVEN,
+			   (odd_field_first ? field_delay : 0));
 	} else {
 		CRTC_WRITE(PV_V_CONTROL,
 			   PV_VCONTROL_CONTINUOUS |
 			   (is_dsi ? PV_VCONTROL_DSI : 0));
 	}
+
+	CRTC_WRITE(PV_VERTA,
+		   VC4_SET_FIELD(vert_bp, PV_VERTA_VBP) |
+		   VC4_SET_FIELD(vert_sync, PV_VERTA_VSYNC));
+	CRTC_WRITE(PV_VERTB,
+		   VC4_SET_FIELD(vert_fp, PV_VERTB_VFP) |
+		   VC4_SET_FIELD(mode->crtc_vdisplay, PV_VERTB_VACTIVE));
 
 	if (is_dsi)
 		CRTC_WRITE(PV_HACT_ACT, mode->hdisplay * pixel_rep);
@@ -535,9 +539,11 @@ static void vc4_crtc_atomic_disable(struct drm_crtc *crtc,
 	struct drm_crtc_state *old_state = drm_atomic_get_old_crtc_state(state,
 									 crtc);
 	struct vc4_crtc_state *old_vc4_state = to_vc4_crtc_state(old_state);
-	struct drm_encoder *encoder = vc4_get_crtc_encoder(crtc, state,
-							   drm_atomic_get_old_connector_state);
+	struct drm_encoder *encoder = vc4_get_crtc_encoder(crtc, old_state);
 	struct drm_device *dev = crtc->dev;
+
+	drm_dbg(dev, "Disabling CRTC %s (%u) connected to Encoder %s (%u)",
+		crtc->name, crtc->base.id, encoder->name, encoder->base.id);
 
 	require_hvs_enabled(dev);
 
@@ -563,11 +569,15 @@ static void vc4_crtc_atomic_disable(struct drm_crtc *crtc,
 static void vc4_crtc_atomic_enable(struct drm_crtc *crtc,
 				   struct drm_atomic_state *state)
 {
+	struct drm_crtc_state *new_state = drm_atomic_get_new_crtc_state(state,
+									 crtc);
 	struct drm_device *dev = crtc->dev;
 	struct vc4_crtc *vc4_crtc = to_vc4_crtc(crtc);
-	struct drm_encoder *encoder = vc4_get_crtc_encoder(crtc, state,
-							   drm_atomic_get_new_connector_state);
+	struct drm_encoder *encoder = vc4_get_crtc_encoder(crtc, new_state);
 	struct vc4_encoder *vc4_encoder = to_vc4_encoder(encoder);
+
+	drm_dbg(dev, "Enabling CRTC %s (%u) connected to Encoder %s (%u)",
+		crtc->name, crtc->base.id, encoder->name, encoder->base.id);
 
 	require_hvs_enabled(dev);
 
@@ -581,7 +591,7 @@ static void vc4_crtc_atomic_enable(struct drm_crtc *crtc,
 	if (vc4_encoder->pre_crtc_configure)
 		vc4_encoder->pre_crtc_configure(encoder, state);
 
-	vc4_crtc_config_pv(crtc, state);
+	vc4_crtc_config_pv(crtc, encoder, state);
 
 	CRTC_WRITE(PV_CONTROL, CRTC_READ(PV_CONTROL) | PV_CONTROL_EN);
 
@@ -650,11 +660,26 @@ static int vc4_crtc_atomic_check(struct drm_crtc *crtc,
 	struct vc4_crtc_state *vc4_state = to_vc4_crtc_state(crtc_state);
 	struct drm_connector *conn;
 	struct drm_connector_state *conn_state;
+	struct drm_encoder *encoder;
 	int ret, i;
 
 	ret = vc4_hvs_atomic_check(crtc, state);
 	if (ret)
 		return ret;
+
+	encoder = vc4_get_crtc_encoder(crtc, crtc_state);
+	if (encoder) {
+		const struct drm_display_mode *mode = &crtc_state->adjusted_mode;
+		struct vc4_encoder *vc4_encoder = to_vc4_encoder(encoder);
+
+		mode = &crtc_state->adjusted_mode;
+		if (vc4_encoder->type == VC4_ENCODER_TYPE_HDMI0) {
+			vc4_state->hvs_load = max(mode->clock * mode->hdisplay / mode->htotal + 1000,
+						  mode->clock * 9 / 10) * 1000;
+		} else {
+			vc4_state->hvs_load = mode->clock * 1000;
+		}
+	}
 
 	for_each_new_connector_in_state(state, conn, conn_state,
 					i) {

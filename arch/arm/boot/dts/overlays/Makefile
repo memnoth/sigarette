@@ -30,6 +30,8 @@ dtbo-$(CONFIG_ARCH_BCM2835) += \
 	audiosense-pi.dtbo \
 	audremap.dtbo \
 	balena-fin.dtbo \
+	cap1106.dtbo \
+	chipdip-dac.dtbo \
 	cma.dtbo \
 	dht11.dtbo \
 	dionaudio-loco.dtbo \
@@ -37,6 +39,7 @@ dtbo-$(CONFIG_ARCH_BCM2835) += \
 	disable-bt.dtbo \
 	disable-wifi.dtbo \
 	dpi18.dtbo \
+	dpi18cpadhi.dtbo \
 	dpi24.dtbo \
 	draws.dtbo \
 	dwc-otg.dtbo \
@@ -93,6 +96,7 @@ dtbo-$(CONFIG_ARCH_BCM2835) += \
 	ilitek251x.dtbo \
 	imx219.dtbo \
 	imx290.dtbo \
+	imx378.dtbo \
 	imx477.dtbo \
 	iqaudio-codec.dtbo \
 	iqaudio-dac.dtbo \
@@ -119,6 +123,10 @@ dtbo-$(CONFIG_ARCH_BCM2835) += \
 	merus-amp.dtbo \
 	midi-uart0.dtbo \
 	midi-uart1.dtbo \
+	midi-uart2.dtbo \
+	midi-uart3.dtbo \
+	midi-uart4.dtbo \
+	midi-uart5.dtbo \
 	minipitft13.dtbo \
 	miniuart-bt.dtbo \
 	mmc.dtbo \
@@ -172,6 +180,7 @@ dtbo-$(CONFIG_ARCH_BCM2835) += \
 	seeed-can-fd-hat-v1.dtbo \
 	seeed-can-fd-hat-v2.dtbo \
 	sh1106-spi.dtbo \
+	si446x-spi0.dtbo \
 	smi.dtbo \
 	smi-dev.dtbo \
 	smi-nand.dtbo \
@@ -196,6 +205,7 @@ dtbo-$(CONFIG_ARCH_BCM2835) += \
 	spi6-2cs.dtbo \
 	ssd1306.dtbo \
 	ssd1306-spi.dtbo \
+	ssd1331-spi.dtbo \
 	ssd1351-spi.dtbo \
 	superaudioboard.dtbo \
 	sx150x.dtbo \
@@ -214,6 +224,8 @@ dtbo-$(CONFIG_ARCH_BCM2835) += \
 	upstream.dtbo \
 	upstream-pi4.dtbo \
 	vc4-fkms-v3d.dtbo \
+	vc4-fkms-v3d-pi4.dtbo \
+	vc4-kms-dpi-at056tn53v1.dtbo \
 	vc4-kms-dsi-7inch.dtbo \
 	vc4-kms-dsi-lt070me05000.dtbo \
 	vc4-kms-dsi-lt070me05000-v2.dtbo \

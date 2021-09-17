@@ -3063,7 +3063,6 @@ mtd_dataflash
 mtdblock
 mtdblock_ro
 mtdoops
-mtdpstore
 mtdram
 mtdswap
 mtip32xx
@@ -3685,8 +3684,6 @@ ps2mult
 psample
 psmouse
 psnap
-pstore_blk
-pstore_zone
 psxpad-spi
 pt
 ptp_clockmatrix
@@ -4670,6 +4667,8 @@ snd-soc-hdac-hdmi
 snd-soc-hdmi-codec
 snd-soc-imx-audmux
 snd-soc-inno-rk3036
+snd-soc-intel-hda-dsp-common
+snd-soc-intel-sof-maxim-common
 snd-soc-kbl_da7219_max98357a
 snd-soc-kbl_da7219_max98927
 snd-soc-kbl_rt5660
@@ -5739,7 +5738,6 @@ wm97xx-ts
 wmi
 wmi-bmof
 wp512
-wwan
 x25
 x38_edac
 x86_pkg_temp_thermal

@@ -9,8 +9,6 @@
 #include <linux/types.h>
 #include <linux/of_device.h>
 
-#define RPI_FIRMWARE_CHAN_FB		1
-
 struct rpi_firmware;
 
 enum rpi_firmware_property_status {
@@ -99,6 +97,7 @@ enum rpi_firmware_property_tag {
 	RPI_FIRMWARE_NOTIFY_XHCI_RESET =                      0x00030058,
 	RPI_FIRMWARE_GET_REBOOT_FLAGS =                       0x00030064,
 	RPI_FIRMWARE_SET_REBOOT_FLAGS =                       0x00038064,
+	RPI_FIRMWARE_NOTIFY_DISPLAY_DONE =                    0x00030066,
 
 	/* Dispmanx TAGS */
 	RPI_FIRMWARE_FRAMEBUFFER_ALLOCATE =                   0x00040001,
@@ -197,6 +196,5 @@ static inline struct rpi_firmware *devm_rpi_firmware_get(struct device *dev,
 	return NULL;
 }
 #endif
-int rpi_firmware_transaction(struct rpi_firmware *fw, u32 chan, u32 data);
 
 #endif /* __SOC_RASPBERRY_FIRMWARE_H__ */
