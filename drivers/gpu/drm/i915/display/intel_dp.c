@@ -1318,16 +1318,14 @@ intel_dp_compute_link_config(struct intel_encoder *encoder,
 	limits.min_bpp = intel_dp_min_bpp(pipe_config->output_format);
 	limits.max_bpp = intel_dp_max_bpp(intel_dp, pipe_config);
 
-	if (intel_dp->use_max_params ||
-	    intel_dp->dpcd[DP_DPCD_REV] <= DP_DPCD_REV_11) {
+	if (intel_dp->use_max_params) {
 		/*
 		 * Use the maximum clock and number of lanes the eDP panel
 		 * advertizes being capable of in case the initial fast
-		 * optimal params failed us or the panel is DP 1.1 or earlier.
-		 * The panels are generally designed to support only a single
-		 * clock and lane configuration, and typically on older panels
-		 * these values correspond to the native resolution of the
-		 * panel.
+		 * optimal params failed us. The panels are generally
+		 * designed to support only a single clock and lane
+		 * configuration, and typically on older panels these
+		 * values correspond to the native resolution of the panel.
 		 */
 		limits.min_lane_count = limits.max_lane_count;
 		limits.min_clock = limits.max_clock;
@@ -2431,10 +2429,13 @@ intel_edp_init_dpcd(struct intel_dp *intel_dp)
 	 */
 	if (drm_dp_dpcd_read(&intel_dp->aux, DP_EDP_DPCD_REV,
 			     intel_dp->edp_dpcd, sizeof(intel_dp->edp_dpcd)) ==
-			     sizeof(intel_dp->edp_dpcd))
+			     sizeof(intel_dp->edp_dpcd)) {
 		drm_dbg_kms(&dev_priv->drm, "eDP DPCD: %*ph\n",
 			    (int)sizeof(intel_dp->edp_dpcd),
 			    intel_dp->edp_dpcd);
+
+		intel_dp->use_max_params = intel_dp->edp_dpcd[0] < DP_EDP_14;
+	}
 
 	/*
 	 * This has to be called after intel_dp->edp_dpcd is filled, PSR checks
@@ -3835,23 +3836,18 @@ static void intel_dp_check_device_service_irq(struct intel_dp *intel_dp)
 
 static void intel_dp_check_link_service_irq(struct intel_dp *intel_dp)
 {
-	struct drm_i915_private *i915 = dp_to_i915(intel_dp);
 	u8 val;
 
 	if (intel_dp->dpcd[DP_DPCD_REV] < 0x11)
 		return;
 
 	if (drm_dp_dpcd_readb(&intel_dp->aux,
-			      DP_LINK_SERVICE_IRQ_VECTOR_ESI0, &val) != 1 || !val) {
-		drm_dbg_kms(&i915->drm, "Error in reading link service irq vector\n");
+			      DP_LINK_SERVICE_IRQ_VECTOR_ESI0, &val) != 1 || !val)
 		return;
-	}
 
 	if (drm_dp_dpcd_writeb(&intel_dp->aux,
-			       DP_LINK_SERVICE_IRQ_VECTOR_ESI0, val) != 1) {
-		drm_dbg_kms(&i915->drm, "Error in writing link service irq vector\n");
+			       DP_LINK_SERVICE_IRQ_VECTOR_ESI0, val) != 1)
 		return;
-	}
 
 	if (val & HDMI_LINK_STATUS_CHANGED)
 		intel_dp_handle_hdmi_link_status_change(intel_dp);
