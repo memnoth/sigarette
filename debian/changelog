@@ -1,3 +1,10 @@
+linux-raspi (5.13.0-1009.10) impish; urgency=medium
+
+  * Miscellaneous upstream changes
+    - ARM: dts: Add Pi Zero 2 support
+
+ -- Juerg Haefliger <juergh@canonical.com>  Mon, 25 Oct 2021 15:22:37 +0200
+
 linux-raspi (5.13.0-1008.9) impish; urgency=medium
 
   * impish/linux-raspi: 5.13.0-1008.9 -proposed tracker (LP: #1944938)
