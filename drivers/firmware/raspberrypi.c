@@ -438,7 +438,7 @@ static int rpi_firmware_remove(struct platform_device *pdev)
  */
 struct rpi_firmware *rpi_firmware_get(struct device_node *firmware_node)
 {
-	struct platform_device *pdev = g_pdev;
+	struct platform_device *pdev = of_find_device_by_node(firmware_node);
 	struct rpi_firmware *fw;
 
 	if (!pdev)
@@ -446,12 +446,18 @@ struct rpi_firmware *rpi_firmware_get(struct device_node *firmware_node)
 
 	fw = platform_get_drvdata(pdev);
 	if (!fw)
-		return NULL;
+		goto err_put_device;
 
 	if (!kref_get_unless_zero(&fw->consumers))
-		return NULL;
+		goto err_put_device;
+
+	put_device(&pdev->dev);
 
 	return fw;
+
+err_put_device:
+	put_device(&pdev->dev);
+	return NULL;
 }
 EXPORT_SYMBOL_GPL(rpi_firmware_get);
 
