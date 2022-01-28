@@ -518,6 +518,22 @@ config MFD_HI6421_PMIC
 	  menus in order to enable them.
 	  We communicate with the Hi6421 via memory-mapped I/O.
 
+config MFD_HI6421_SPMI
+	tristate "HiSilicon Hi6421v600 SPMI PMU/Codec IC"
+	depends on OF
+	depends on SPMI
+	select MFD_CORE
+	select REGMAP_SPMI
+	help
+	  Add support for HiSilicon Hi6421v600 SPMI PMIC. Hi6421 includes
+	  multi-functions, such as regulators, RTC, codec, Coulomb counter,
+	  etc.
+
+	  This driver includes core APIs _only_. You have to select
+	  individual components like voltage regulators under corresponding
+	  menus in order to enable them.
+	  We communicate with the Hi6421v600 via a SPMI bus.
+
 config MFD_HI655X_PMIC
 	tristate "HiSilicon Hi655X series PMU/Codec IC"
 	depends on ARCH_HISI || COMPILE_TEST
@@ -911,6 +927,7 @@ config MFD_MT6360
 	select MFD_CORE
 	select REGMAP_I2C
 	select REGMAP_IRQ
+	select CRC8
 	depends on I2C
 	help
 	  Say Y here to enable MT6360 PMU/PMIC/LDO functional support.
@@ -1076,6 +1093,16 @@ config MFD_SPMI_PMIC
 	  Say M here if you want to include support for the SPMI PMIC
 	  series as a module.  The module will be called "qcom-spmi-pmic".
 
+config MFD_RASPBERRYPI_POE_HAT
+	tristate "Raspberry Pi PoE HAT MFD"
+	depends on I2C
+	select MFD_SIMPLE_MFD_I2C
+	help
+	  This module supports the PWM fan controller found on the Raspberry Pi
+	  POE and POE+ HAT boards, and the power supply driver on the POE+ HAT.
+	  (Functionally it relies on MFD_SIMPLE_MFD_I2C to provide the framework
+	  that loads the child drivers).
+
 config MFD_RDC321X
 	tristate "RDC R-321x southbridge"
 	select MFD_CORE
@@ -1084,6 +1111,16 @@ config MFD_RDC321X
 	  Say yes here if you want to have support for the RDC R-321x SoC
 	  southbridge which provides access to GPIOs and Watchdog using the
 	  southbridge PCI device configuration space.
+
+config MFD_RT4831
+	tristate "Richtek RT4831 four channel WLED and Display Bias Voltage"
+	depends on I2C
+	select MFD_CORE
+	select REGMAP_I2C
+	help
+	  This enables support for the Richtek RT4831 that includes 4 channel
+	  WLED driving and Display Bias Voltage. It's commonly used to provide
+	  power to the LCD display and LCD backlight.
 
 config MFD_RT5033
 	tristate "Richtek RT5033 Power Management IC"
@@ -1142,6 +1179,7 @@ config MFD_RN5T618
 config MFD_SEC_CORE
 	tristate "Samsung Electronics PMIC Series Support"
 	depends on I2C=y
+	depends on OF || COMPILE_TEST
 	select MFD_CORE
 	select REGMAP_I2C
 	select REGMAP_IRQ
@@ -1174,6 +1212,7 @@ config MFD_SI476X_CORE
 config MFD_SIMPLE_MFD_I2C
 	tristate
 	depends on I2C
+	select MFD_CORE
 	select REGMAP_I2C
 	help
 	  This driver creates a single register map with the intention for it
@@ -1508,24 +1547,6 @@ config MFD_TPS65217
 	  This driver can also be built as a module.  If so, the module
 	  will be called tps65217.
 
-config MFD_TPS68470
-	bool "TI TPS68470 Power Management / LED chips"
-	depends on ACPI && PCI && I2C=y
-	depends on I2C_DESIGNWARE_PLATFORM=y
-	select MFD_CORE
-	select REGMAP_I2C
-	help
-	  If you say yes here you get support for the TPS68470 series of
-	  Power Management / LED chips.
-
-	  These include voltage regulators, LEDs and other features
-	  that are often used in portable devices.
-
-	  This option is a bool as it provides an ACPI operation
-	  region, which must be available before any of the devices
-	  using this are probed. This option also configures the
-	  designware-i2c driver to be built-in, for the same reason.
-
 config MFD_TI_LP873X
 	tristate "TI LP873X Power Management IC"
 	depends on I2C
@@ -1797,7 +1818,7 @@ config MFD_ARIZONA
 	select REGMAP
 	select REGMAP_IRQ
 	select MFD_CORE
-	bool
+	tristate
 
 config MFD_ARIZONA_I2C
 	tristate "Cirrus Logic/Wolfson Microelectronics Arizona platform with I2C"
@@ -2114,6 +2135,20 @@ config MFD_ACER_A500_EC
 	  The controller itself is ENE KB930, it is running firmware
 	  customized for the specific needs of the Acer A500 hardware.
 
+config MFD_QCOM_PM8008
+	tristate "QCOM PM8008 Power Management IC"
+	depends on I2C && OF
+	select REGMAP_I2C
+	select REGMAP_IRQ
+	help
+	  Select this option to get support for the Qualcomm Technologies, Inc.
+	  PM8008 PMIC chip. PM8008 is a dedicated camera PMIC that integrates
+	  all the necessary power management, housekeeping, and interface
+	  support functions into a single IC. This driver provides common
+	  support for accessing the device by instantiating all the child nodes
+	  under it in the device tree. Additional drivers must be enabled in
+	  order to use the functionality of the device.
+
 config MFD_AAEON
 	tristate "AAEON WMI MFD devices"
 	depends on ASUS_WMI
@@ -2193,6 +2228,34 @@ config MFD_INTEL_M10_BMC
 
 	  This driver provides common support for accessing the device,
 	  additional drivers must be enabled in order to use the functionality
+	  of the device.
+
+config MFD_RSMU_I2C
+	tristate "Renesas Synchronization Management Unit with I2C"
+	depends on I2C && OF
+	select MFD_CORE
+	select REGMAP_I2C
+	help
+	  Support for the Renesas Synchronization Management Unit, such as
+	  Clockmatrix and 82P33XXX series. This option supports I2C as
+	  the control interface.
+
+	  This driver provides common support for accessing the device.
+	  Additional drivers must be enabled in order to use the functionality
+	  of the device.
+
+config MFD_RSMU_SPI
+	tristate "Renesas Synchronization Management Unit with SPI"
+	depends on SPI && OF
+	select MFD_CORE
+	select REGMAP_SPI
+	help
+	  Support for the Renesas Synchronization Management Unit, such as
+	  Clockmatrix and 82P33XXX series. This option supports SPI as
+	  the control interface.
+
+	  This driver provides common support for accessing the device.
+	  Additional drivers must be enabled in order to use the functionality
 	  of the device.
 
 endmenu

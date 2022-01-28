@@ -41,6 +41,7 @@
 #include "set_mode_types.h"
 #include "virtual/virtual_stream_encoder.h"
 #include "dpcd_defs.h"
+#include "link_enc_cfg.h"
 
 #if defined(CONFIG_DRM_AMD_DC_SI)
 #include "dce60/dce60_resource.h"
@@ -57,6 +58,8 @@
 #include "dcn30/dcn30_resource.h"
 #include "dcn301/dcn301_resource.h"
 #include "dcn302/dcn302_resource.h"
+#include "dcn303/dcn303_resource.h"
+#include "dcn31/dcn31_resource.h"
 #endif
 
 #define DC_LOGGER_INIT(logger)
@@ -130,12 +133,20 @@ enum dce_version resource_parse_asic_id(struct hw_asic_id asic_id)
 			dc_version = DCN_VERSION_3_0;
 		if (ASICREV_IS_DIMGREY_CAVEFISH_P(asic_id.hw_internal_rev))
 			dc_version = DCN_VERSION_3_02;
+		if (ASICREV_IS_BEIGE_GOBY_P(asic_id.hw_internal_rev))
+			dc_version = DCN_VERSION_3_03;
 		break;
 
 	case FAMILY_VGH:
 		dc_version = DCN_VERSION_3_01;
 		break;
+
+	case FAMILY_YELLOW_CARP:
+		if (ASICREV_IS_YELLOW_CARP(asic_id.hw_internal_rev))
+			dc_version = DCN_VERSION_3_1;
+		break;
 #endif
+
 	default:
 		dc_version = DCE_VERSION_UNKNOWN;
 		break;
@@ -215,6 +226,12 @@ struct resource_pool *dc_create_resource_pool(struct dc  *dc,
 		break;
 	case DCN_VERSION_3_02:
 		res_pool = dcn302_create_resource_pool(init_data, dc);
+		break;
+	case DCN_VERSION_3_03:
+		res_pool = dcn303_create_resource_pool(init_data, dc);
+		break;
+	case DCN_VERSION_3_1:
+		res_pool = dcn31_create_resource_pool(init_data, dc);
 		break;
 #endif
 	default:
@@ -423,7 +440,7 @@ bool resource_are_vblanks_synchronizable(
 {
 	uint32_t base60_refresh_rates[] = {10, 20, 5};
 	uint8_t i;
-	uint8_t rr_count = sizeof(base60_refresh_rates)/sizeof(base60_refresh_rates[0]);
+	uint8_t rr_count = ARRAY_SIZE(base60_refresh_rates);
 	uint64_t frame_time_diff;
 
 	if (stream1->ctx->dc->config.vblank_alignment_dto_params &&
@@ -605,6 +622,7 @@ static enum pixel_format convert_pixel_format_to_dalsurface(
 		dal_pixel_format = PIXEL_FORMAT_420BPP10;
 		break;
 	case SURFACE_PIXEL_FORMAT_GRPH_ARGB16161616:
+	case SURFACE_PIXEL_FORMAT_GRPH_ABGR16161616:
 	default:
 		dal_pixel_format = PIXEL_FORMAT_UNKNOWN;
 		break;
@@ -1013,7 +1031,7 @@ bool resource_build_scaling_params(struct pipe_ctx *pipe_ctx)
 
 	/* Timing borders are part of vactive that we are also supposed to skip in addition
 	 * to any stream dst offset. Since dm logic assumes dst is in addressable
-	 * space we need to add the the left and top borders to dst offsets temporarily.
+	 * space we need to add the left and top borders to dst offsets temporarily.
 	 * TODO: fix in DM, stream dst is supposed to be in vactive
 	 */
 	pipe_ctx->stream->dst.x += timing->h_border_left;
@@ -1034,12 +1052,27 @@ bool resource_build_scaling_params(struct pipe_ctx *pipe_ctx)
 	/* depends on scaling ratios and recout, does not calculate offset yet */
 	calculate_viewport_size(pipe_ctx);
 
+	/* Stopgap for validation of ODM + MPO on one side of screen case */
+	if (pipe_ctx->plane_res.scl_data.viewport.height < 1 ||
+			pipe_ctx->plane_res.scl_data.viewport.width < 1)
+		return false;
+
 	/*
 	 * LB calculations depend on vp size, h/v_active and scaling ratios
 	 * Setting line buffer pixel depth to 24bpp yields banding
-	 * on certain displays, such as the Sharp 4k
+	 * on certain displays, such as the Sharp 4k. 36bpp is needed
+	 * to support SURFACE_PIXEL_FORMAT_GRPH_ARGB16161616 and
+	 * SURFACE_PIXEL_FORMAT_GRPH_ABGR16161616 with actual > 10 bpc
+	 * precision on at least DCN display engines. However, at least
+	 * Carrizo with DCE_VERSION_11_0 does not like 36 bpp lb depth,
+	 * so use only 30 bpp on DCE_VERSION_11_0. Testing with DCE 11.2 and 8.3
+	 * did not show such problems, so this seems to be the exception.
 	 */
-	pipe_ctx->plane_res.scl_data.lb_params.depth = LB_PIXEL_DEPTH_30BPP;
+	if (plane_state->ctx->dce_version > DCE_VERSION_11_0)
+		pipe_ctx->plane_res.scl_data.lb_params.depth = LB_PIXEL_DEPTH_36BPP;
+	else
+		pipe_ctx->plane_res.scl_data.lb_params.depth = LB_PIXEL_DEPTH_30BPP;
+
 	pipe_ctx->plane_res.scl_data.lb_params.alpha_en = plane_state->per_pixel_alpha;
 
 	if (pipe_ctx->plane_res.xfm != NULL)
@@ -1545,12 +1578,6 @@ static bool is_timing_changed(struct dc_stream_state *cur_stream,
 	if (cur_stream == NULL)
 		return true;
 
-	/* If sink pointer changed, it means this is a hotplug, we should do
-	 * full hw setting.
-	 */
-	if (cur_stream->sink != new_stream->sink)
-		return true;
-
 	/* If output color space is changed, need to reprogram info frames */
 	if (cur_stream->output_color_space != new_stream->output_color_space)
 		return true;
@@ -1595,6 +1622,10 @@ bool dc_is_stream_unchanged(
 		return false;
 
 	if (old_stream->ignore_msa_timing_param != stream->ignore_msa_timing_param)
+		return false;
+
+	// Only Have Audio left to check whether it is same or not. This is a corner case for Tiled sinks
+	if (old_stream->audio_info.mode_count != stream->audio_info.mode_count)
 		return false;
 
 	return true;
@@ -2115,6 +2146,16 @@ enum dc_status dc_validate_global_state(
 
 	if (!new_ctx)
 		return DC_ERROR_UNEXPECTED;
+#if defined(CONFIG_DRM_AMD_DC_DCN)
+
+	/*
+	 * Update link encoder to stream assignment.
+	 * TODO: Split out reason allocation from validation.
+	 */
+	if (dc->res_pool->funcs->link_encs_assign && fast_validate == false)
+		dc->res_pool->funcs->link_encs_assign(
+			dc, new_ctx, new_ctx->streams, new_ctx->stream_count);
+#endif
 
 	if (dc->res_pool->funcs->validate_global) {
 		result = dc->res_pool->funcs->validate_global(dc, new_ctx);
@@ -2518,6 +2559,7 @@ void dc_resource_state_destruct(struct dc_state *context)
 		dc_stream_release(context->streams[i]);
 		context->streams[i] = NULL;
 	}
+	context->stream_count = 0;
 }
 
 void dc_resource_state_copy_construct(
@@ -2690,8 +2732,18 @@ bool pipe_need_reprogram(
 		return true;
 
 	/* DIG link encoder resource assignment for stream changed. */
-	if (pipe_ctx_old->stream->link_enc != pipe_ctx->stream->link_enc)
-		return true;
+	if (pipe_ctx_old->stream->ctx->dc->res_pool->funcs->link_encs_assign) {
+		bool need_reprogram = false;
+		struct dc *dc = pipe_ctx_old->stream->ctx->dc;
+		enum link_enc_cfg_mode mode = dc->current_state->res_ctx.link_enc_cfg_ctx.mode;
+
+		dc->current_state->res_ctx.link_enc_cfg_ctx.mode = LINK_ENC_CFG_STEADY;
+		if (link_enc_cfg_get_link_enc_used_by_stream(dc, pipe_ctx_old->stream) != pipe_ctx->stream->link_enc)
+			need_reprogram = true;
+		dc->current_state->res_ctx.link_enc_cfg_ctx.mode = mode;
+
+		return need_reprogram;
+	}
 
 	return false;
 }
@@ -2834,7 +2886,8 @@ enum dc_status dc_validate_stream(struct dc *dc, struct dc_stream_state *stream)
 		res = DC_FAIL_CONTROLLER_VALIDATE;
 
 	if (res == DC_OK) {
-		if (!link->link_enc->funcs->validate_output_with_stream(
+		if (link->ep_type == DISPLAY_ENDPOINT_PHY &&
+				!link->link_enc->funcs->validate_output_with_stream(
 						link->link_enc, stream))
 			res = DC_FAIL_ENC_VALIDATE;
 	}
@@ -2884,6 +2937,7 @@ unsigned int resource_pixel_format_to_bpp(enum surface_pixel_format format)
 #endif
 		return 32;
 	case SURFACE_PIXEL_FORMAT_GRPH_ARGB16161616:
+	case SURFACE_PIXEL_FORMAT_GRPH_ABGR16161616:
 	case SURFACE_PIXEL_FORMAT_GRPH_ARGB16161616F:
 	case SURFACE_PIXEL_FORMAT_GRPH_ABGR16161616F:
 		return 64;

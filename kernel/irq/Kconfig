@@ -70,6 +70,11 @@ config IRQ_DOMAIN_HIERARCHY
 	bool
 	select IRQ_DOMAIN
 
+# Support for obsolete non-mapping irq domains
+config IRQ_DOMAIN_NOMAP
+	bool
+	select IRQ_DOMAIN
+
 # Support for hierarchical fasteoi+edge and fasteoi+level handlers
 config IRQ_FASTEOI_HIERARCHY_HANDLERS
 	bool
@@ -107,10 +112,6 @@ config GENERIC_IRQ_RESERVATION_MODE
 # Support forced irq threading
 config IRQ_FORCED_THREADING
        bool
-
-config IRQ_FORCED_THREADING_DEFAULT
-	bool "Use IRQ threading by default"
-	depends on IRQ_FORCED_THREADING
 
 config SPARSE_IRQ
 	bool "Support sparse irq numbering" if MAY_HAVE_SPARSE_IRQ

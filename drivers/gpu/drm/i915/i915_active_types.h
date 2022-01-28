@@ -14,7 +14,6 @@
 #include <linux/rbtree.h>
 #include <linux/rcupdate.h>
 #include <linux/workqueue.h>
-#include <linux/rwsem.h>
 
 #include "i915_utils.h"
 
@@ -24,11 +23,6 @@ struct i915_active_fence {
 };
 
 struct active_node;
-
-#define I915_ACTIVE_MAY_SLEEP BIT(0)
-
-#define __i915_active_call __aligned(4)
-#define i915_active_may_sleep(fn) ptr_pack_bits(&(fn), I915_ACTIVE_MAY_SLEEP, 2)
 
 struct i915_active {
 	atomic_t count;

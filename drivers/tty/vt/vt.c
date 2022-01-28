@@ -106,7 +106,6 @@
 #include <linux/ctype.h>
 #include <linux/bsearch.h>
 #include <linux/gcd.h>
-#include <linux/screen_info.h>
 
 #define MAX_NR_CON_DRIVER 16
 
@@ -143,7 +142,7 @@ static const struct consw *con_driver_map[MAX_NR_CONSOLES];
 
 static int con_open(struct tty_struct *, struct file *);
 static void vc_init(struct vc_data *vc, unsigned int rows,
-		    unsigned int cols, int do_clear, int mode);
+		    unsigned int cols, int do_clear);
 static void gotoxy(struct vc_data *vc, int new_x, int new_y);
 static void save_cur(struct vc_data *vc);
 static void reset_terminal(struct vc_data *vc, int do_clear);
@@ -166,9 +165,6 @@ module_param(global_cursor_default, int, S_IRUGO | S_IWUSR);
 
 static int cur_default = CUR_UNDERLINE;
 module_param(cur_default, int, S_IRUGO | S_IWUSR);
-
-int vt_handoff = 0;
-module_param_named(handoff, vt_handoff, int, S_IRUGO | S_IWUSR);
 
 /*
  * ignore_poke: don't unblank the screen when things are typed.  This is
@@ -1012,13 +1008,6 @@ void redraw_screen(struct vc_data *vc, int is_switch)
 		}
 		if (tty0dev)
 			sysfs_notify(&tty0dev->kobj, NULL, "active");
-		/*
-		 * If we are switching away from a transparent VT the contents
-		 * will be lost, convert it into a blank text console then
-		 * it will be repainted blank if we ever switch back.
-		 */
-		if (old_vc->vc_mode == KD_TRANSPARENT)
-			old_vc->vc_mode = KD_TEXT;
 	} else {
 		hide_cursor(vc);
 		redraw = 1;
@@ -1164,7 +1153,7 @@ int vc_allocate(unsigned int currcons)	/* return 0 on success */
 	if (global_cursor_default == -1)
 		global_cursor_default = 1;
 
-	vc_init(vc, vc->vc_rows, vc->vc_cols, 1, KD_TEXT);
+	vc_init(vc, vc->vc_rows, vc->vc_cols, 1);
 	vcs_make_sysfs(currcons);
 	atomic_notifier_call_chain(&vt_notifier_list, VT_ALLOCATE, &param);
 
@@ -1200,7 +1189,7 @@ static inline int resize_screen(struct vc_data *vc, int width, int height,
  *	information and perform any necessary signal handling.
  *
  *	Caller must hold the console semaphore. Takes the termios rwsem and
- *	ctrl_lock of the tty IFF a tty is passed.
+ *	ctrl.lock of the tty IFF a tty is passed.
  */
 
 static int vc_do_resize(struct tty_struct *tty, struct vc_data *vc,
@@ -1383,7 +1372,7 @@ int vc_resize(struct vc_data *vc, unsigned int cols, unsigned int rows)
  *	the actual work.
  *
  *	Takes the console sem and the called methods then take the tty
- *	termios_rwsem and the tty ctrl_lock in that order.
+ *	termios_rwsem and the tty ctrl.lock in that order.
  */
 static int vt_resize(struct tty_struct *tty, struct winsize *ws)
 {
@@ -2939,7 +2928,7 @@ static int do_con_write(struct tty_struct *tty, const unsigned char *buf, int co
 
 	param.vc = vc;
 
-	while (!tty->stopped && count) {
+	while (!tty->flow.stopped && count) {
 		int orig = *buf;
 		buf++;
 		n++;
@@ -3311,21 +3300,14 @@ static int con_write(struct tty_struct *tty, const unsigned char *buf, int count
 
 static int con_put_char(struct tty_struct *tty, unsigned char ch)
 {
-	if (in_interrupt())
-		return 0;	/* n_r3964 calls put_char() from interrupt context */
 	return do_con_write(tty, &ch, 1);
 }
 
-static int con_write_room(struct tty_struct *tty)
+static unsigned int con_write_room(struct tty_struct *tty)
 {
-	if (tty->stopped)
+	if (tty->flow.stopped)
 		return 0;
 	return 32768;		/* No limit, really; we're not buffering */
-}
-
-static int con_chars_in_buffer(struct tty_struct *tty)
-{
-	return 0;		/* we're not buffering */
 }
 
 /*
@@ -3466,7 +3448,7 @@ module_param_named(italic, default_italic_color, int, S_IRUGO | S_IWUSR);
 module_param_named(underline, default_underline_color, int, S_IRUGO | S_IWUSR);
 
 static void vc_init(struct vc_data *vc, unsigned int rows,
-		    unsigned int cols, int do_clear, int mode)
+		    unsigned int cols, int do_clear)
 {
 	int j, k ;
 
@@ -3477,7 +3459,7 @@ static void vc_init(struct vc_data *vc, unsigned int rows,
 
 	set_origin(vc);
 	vc->vc_pos = vc->vc_origin;
-	reset_vc(vc, mode);
+	reset_vc(vc);
 	for (j=k=0; j<16; j++) {
 		vc->vc_palette[k++] = default_red[j] ;
 		vc->vc_palette[k++] = default_grn[j] ;
@@ -3535,18 +3517,7 @@ static int __init con_init(void)
 		mod_timer(&console_timer, jiffies + (blankinterval * HZ));
 	}
 
-	if (vt_handoff > 0 && vt_handoff <= MAX_NR_CONSOLES) {
-		currcons = vt_handoff - 1;
-		vc_cons[currcons].d = vc = kzalloc(sizeof(struct vc_data), GFP_NOWAIT);
-		INIT_WORK(&vc_cons[currcons].SAK_work, vc_SAK);
-		tty_port_init(&vc->port);
-		visual_init(vc, currcons, 1);
-		vc->vc_screenbuf = kzalloc(vc->vc_screenbuf_size, GFP_NOWAIT);
-		vc_init(vc, vc->vc_rows, vc->vc_cols, 0, KD_TRANSPARENT);
-	}
 	for (currcons = 0; currcons < MIN_NR_CONSOLES; currcons++) {
-		if (currcons == vt_handoff - 1)
-			continue;
 		vc_cons[currcons].d = vc = kzalloc(sizeof(struct vc_data), GFP_NOWAIT);
 		INIT_WORK(&vc_cons[currcons].SAK_work, vc_SAK);
 		tty_port_init(&vc->port);
@@ -3554,14 +3525,9 @@ static int __init con_init(void)
 		/* Assuming vc->vc_{cols,rows,screenbuf_size} are sane here. */
 		vc->vc_screenbuf = kzalloc(vc->vc_screenbuf_size, GFP_NOWAIT);
 		vc_init(vc, vc->vc_rows, vc->vc_cols,
-			currcons || !vc->vc_sw->con_save_screen, KD_TEXT);
+			currcons || !vc->vc_sw->con_save_screen);
 	}
 	currcons = fg_console = 0;
-	if (vt_handoff > 0) {
-		printk(KERN_INFO "vt handoff: transparent VT on vt#%d\n",
-								vt_handoff);
-		currcons = fg_console = vt_handoff - 1;
-	}
 	master_display_fg = vc = vc_cons[currcons].d;
 	set_origin(vc);
 	save_screen(vc);
@@ -3590,7 +3556,6 @@ static const struct tty_operations con_ops = {
 	.write_room = con_write_room,
 	.put_char = con_put_char,
 	.flush_chars = con_flush_chars,
-	.chars_in_buffer = con_chars_in_buffer,
 	.ioctl = vt_ioctl,
 #ifdef CONFIG_COMPAT
 	.compat_ioctl = vt_compat_ioctl,
@@ -3634,8 +3599,9 @@ int __init vty_init(const struct file_operations *console_fops)
 
 	vcs_init();
 
-	console_driver = alloc_tty_driver(MAX_NR_CONSOLES);
-	if (!console_driver)
+	console_driver = tty_alloc_driver(MAX_NR_CONSOLES, TTY_DRIVER_REAL_RAW |
+			TTY_DRIVER_RESET_TERMIOS);
+	if (IS_ERR(console_driver))
 		panic("Couldn't allocate console driver\n");
 
 	console_driver->name = "tty";
@@ -3646,7 +3612,6 @@ int __init vty_init(const struct file_operations *console_fops)
 	console_driver->init_termios = tty_std_termios;
 	if (default_utf8)
 		console_driver->init_termios.c_iflag |= IUTF8;
-	console_driver->flags = TTY_DRIVER_REAL_RAW | TTY_DRIVER_RESET_TERMIOS;
 	tty_set_operations(console_driver, &con_ops);
 	if (tty_register_driver(console_driver))
 		panic("Couldn't register console driver\n");

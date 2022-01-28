@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013 Johannes Berg <johannes@sipsolutions.net>
+ * Copyright (c) 2013, 2021 Johannes Berg <johannes@sipsolutions.net>
  *
  *  This file is free software: you may copy, redistribute and/or modify it
  *  under the terms of the GNU General Public License as published by the
@@ -50,11 +50,6 @@
 #include "reg.h"
 
 static const char alx_drv_name[] = "alx";
-
-/* disable WoL by default */
-bool enable_wol;
-module_param(enable_wol, bool, 0644);
-MODULE_PARM_DESC(enable_wol, "Enable Wake on Lan feature");
 
 static void alx_free_txbuf(struct alx_tx_queue *txq, int entry)
 {
@@ -1074,7 +1069,6 @@ static int alx_init_sw(struct alx_priv *alx)
 	alx->dev->max_mtu = ALX_MAX_FRAME_LEN(ALX_MAX_FRAME_SIZE);
 	alx->tx_ringsz = 256;
 	alx->rx_ringsz = 512;
-	hw->sleep_ctrl = ALX_SLEEP_WOL_MAGIC | ALX_SLEEP_WOL_PHY;
 	hw->imt = 200;
 	alx->int_mask = ALX_ISR_MISC;
 	hw->dma_chnl = hw->max_dma_chnl;
@@ -1097,8 +1091,9 @@ static int alx_init_sw(struct alx_priv *alx)
 		      ALX_MAC_CTRL_RXFC_EN |
 		      ALX_MAC_CTRL_TXFC_EN |
 		      7 << ALX_MAC_CTRL_PRMBLEN_SHIFT;
+	mutex_init(&alx->mtx);
 
-	return err;
+	return 0;
 }
 
 
@@ -1128,6 +1123,8 @@ static void alx_halt(struct alx_priv *alx)
 {
 	struct alx_hw *hw = &alx->hw;
 
+	lockdep_assert_held(&alx->mtx);
+
 	alx_netif_stop(alx);
 	hw->link_speed = SPEED_UNKNOWN;
 	hw->duplex = DUPLEX_UNKNOWN;
@@ -1153,6 +1150,8 @@ static void alx_configure(struct alx_priv *alx)
 
 static void alx_activate(struct alx_priv *alx)
 {
+	lockdep_assert_held(&alx->mtx);
+
 	/* hardware setting lost, restore it */
 	alx_reinit_rings(alx);
 	alx_configure(alx);
@@ -1167,7 +1166,7 @@ static void alx_activate(struct alx_priv *alx)
 
 static void alx_reinit(struct alx_priv *alx)
 {
-	ASSERT_RTNL();
+	lockdep_assert_held(&alx->mtx);
 
 	alx_halt(alx);
 	alx_activate(alx);
@@ -1255,6 +1254,8 @@ out_disable_adv_intr:
 
 static void __alx_stop(struct alx_priv *alx)
 {
+	lockdep_assert_held(&alx->mtx);
+
 	alx_free_irq(alx);
 
 	cancel_work_sync(&alx->link_check_wk);
@@ -1289,6 +1290,8 @@ static void alx_check_link(struct alx_priv *alx)
 	unsigned long flags;
 	int old_speed;
 	int err;
+
+	lockdep_assert_held(&alx->mtx);
 
 	/* clear PHY internal interrupt status, otherwise the main
 	 * interrupt status will be asserted forever
@@ -1344,73 +1347,25 @@ reset:
 
 static int alx_open(struct net_device *netdev)
 {
-	return __alx_open(netdev_priv(netdev), false);
+	struct alx_priv *alx = netdev_priv(netdev);
+	int ret;
+
+	mutex_lock(&alx->mtx);
+	ret = __alx_open(alx, false);
+	mutex_unlock(&alx->mtx);
+
+	return ret;
 }
 
 static int alx_stop(struct net_device *netdev)
 {
-	__alx_stop(netdev_priv(netdev));
-	return 0;
-}
+	struct alx_priv *alx = netdev_priv(netdev);
 
-static int __alx_shutdown(struct pci_dev *pdev, bool *wol_en)
-{
-	struct alx_priv *alx = pci_get_drvdata(pdev);
-	struct net_device *netdev = alx->dev;
-	struct alx_hw *hw = &alx->hw;
-	int err, speed;
-	u8 duplex;
-
-	netif_device_detach(netdev);
-
-	if (netif_running(netdev))
-		__alx_stop(alx);
-
-#ifdef CONFIG_PM_SLEEP
-	err = pci_save_state(pdev);
-	if (err)
-		return err;
-#endif
-
-	err = alx_select_powersaving_speed(hw, &speed, &duplex);
-	if (err)
-		return err;
-	err = alx_clear_phy_intr(hw);
-	if (err)
-		return err;
-	err = alx_pre_suspend(hw, speed, duplex);
-	if (err)
-		return err;
-	err = alx_config_wol(hw);
-	if (err)
-		return err;
-
-	*wol_en = false;
-	if (hw->sleep_ctrl & ALX_SLEEP_ACTIVE) {
-		netif_info(alx, wol, netdev,
-			   "wol: ctrl=%X, speed=%X\n",
-			   hw->sleep_ctrl, speed);
-		device_set_wakeup_enable(&pdev->dev, true);
-		*wol_en = true;
-	}
-
-	pci_disable_device(pdev);
+	mutex_lock(&alx->mtx);
+	__alx_stop(alx);
+	mutex_unlock(&alx->mtx);
 
 	return 0;
-}
-
-static void alx_shutdown(struct pci_dev *pdev)
-{
-	int err;
-	bool wol_en;
-
-	err = __alx_shutdown(pdev, &wol_en);
-	if (!err) {
-		pci_wake_from_d3(pdev, wol_en);
-		pci_set_power_state(pdev, PCI_D3hot);
-	} else {
-		dev_err(&pdev->dev, "shutdown fail %d\n", err);
-	}
 }
 
 static void alx_link_check(struct work_struct *work)
@@ -1419,18 +1374,18 @@ static void alx_link_check(struct work_struct *work)
 
 	alx = container_of(work, struct alx_priv, link_check_wk);
 
-	rtnl_lock();
+	mutex_lock(&alx->mtx);
 	alx_check_link(alx);
-	rtnl_unlock();
+	mutex_unlock(&alx->mtx);
 }
 
 static void alx_reset(struct work_struct *work)
 {
 	struct alx_priv *alx = container_of(work, struct alx_priv, reset_wk);
 
-	rtnl_lock();
+	mutex_lock(&alx->mtx);
 	alx_reinit(alx);
-	rtnl_unlock();
+	mutex_unlock(&alx->mtx);
 }
 
 static int alx_tpd_req(struct sk_buff *skb)
@@ -1746,7 +1701,7 @@ static const struct net_device_ops alx_netdev_ops = {
 	.ndo_validate_addr      = eth_validate_addr,
 	.ndo_set_mac_address    = alx_set_mac_address,
 	.ndo_change_mtu         = alx_change_mtu,
-	.ndo_do_ioctl           = alx_ioctl,
+	.ndo_eth_ioctl           = alx_ioctl,
 	.ndo_tx_timeout         = alx_tx_timeout,
 	.ndo_fix_features	= alx_fix_features,
 #ifdef CONFIG_NET_POLL_CONTROLLER
@@ -1837,6 +1792,8 @@ static int alx_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		goto out_unmap;
 	}
 
+	mutex_lock(&alx->mtx);
+
 	alx_reset_pcie(hw);
 
 	phy_configured = alx_phy_configured(hw);
@@ -1847,7 +1804,7 @@ static int alx_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	err = alx_reset_mac(hw);
 	if (err) {
 		dev_err(&pdev->dev, "MAC Reset failed, error = %d\n", err);
-		goto out_unmap;
+		goto out_unlock;
 	}
 
 	/* setup link to put it in a known good starting state */
@@ -1857,7 +1814,7 @@ static int alx_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 			dev_err(&pdev->dev,
 				"failed to configure PHY speed/duplex (err=%d)\n",
 				err);
-			goto out_unmap;
+			goto out_unlock;
 		}
 	}
 
@@ -1890,8 +1847,10 @@ static int alx_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	if (!alx_get_phy_info(hw)) {
 		dev_err(&pdev->dev, "failed to identify PHY\n");
 		err = -EIO;
-		goto out_unmap;
+		goto out_unlock;
 	}
+
+	mutex_unlock(&alx->mtx);
 
 	INIT_WORK(&alx->link_check_wk, alx_link_check);
 	INIT_WORK(&alx->reset_wk, alx_reset);
@@ -1903,14 +1862,14 @@ static int alx_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		goto out_unmap;
 	}
 
-	device_set_wakeup_enable(&pdev->dev, hw->sleep_ctrl);
-
 	netdev_info(netdev,
 		    "Qualcomm Atheros AR816x/AR817x Ethernet [%pM]\n",
 		    netdev->dev_addr);
 
 	return 0;
 
+out_unlock:
+	mutex_unlock(&alx->mtx);
 out_unmap:
 	iounmap(hw->hw_addr);
 out_free_netdev:
@@ -1938,100 +1897,58 @@ static void alx_remove(struct pci_dev *pdev)
 	pci_disable_pcie_error_reporting(pdev);
 	pci_disable_device(pdev);
 
+	mutex_destroy(&alx->mtx);
+
 	free_netdev(alx->dev);
 }
 
 #ifdef CONFIG_PM_SLEEP
 static int alx_suspend(struct device *dev)
 {
-	struct pci_dev *pdev = to_pci_dev(dev);
-	int err;
-	bool wol_en;
+	struct alx_priv *alx = dev_get_drvdata(dev);
 
-	err = __alx_shutdown(pdev, &wol_en);
-	if (err) {
-		dev_err(&pdev->dev, "shutdown fail in suspend %d\n", err);
-		return err;
-	}
+	if (!netif_running(alx->dev))
+		return 0;
+	netif_device_detach(alx->dev);
 
-	if (wol_en) {
-		pci_prepare_to_sleep(pdev);
-	} else {
-		pci_wake_from_d3(pdev, false);
-		pci_set_power_state(pdev, PCI_D3hot);
-	}
+	mutex_lock(&alx->mtx);
+	__alx_stop(alx);
+	mutex_unlock(&alx->mtx);
 
 	return 0;
 }
 
 static int alx_resume(struct device *dev)
 {
-	struct pci_dev *pdev = to_pci_dev(dev);
-	struct alx_priv *alx = pci_get_drvdata(pdev);
-	struct net_device *netdev = alx->dev;
+	struct alx_priv *alx = dev_get_drvdata(dev);
 	struct alx_hw *hw = &alx->hw;
 	int err;
 
-	pci_set_power_state(pdev, PCI_D0);
-	pci_restore_state(pdev);
-	pci_save_state(pdev);
-
-	pci_enable_wake(pdev, PCI_D3hot, 0);
-	pci_enable_wake(pdev, PCI_D3cold, 0);
-
-	hw->link_speed = SPEED_UNKNOWN;
-	alx->int_mask = ALX_ISR_MISC;
-
-	alx_reset_pcie(hw);
+	mutex_lock(&alx->mtx);
 	alx_reset_phy(hw);
 
-	pci_set_power_state(pdev, PCI_D0);
-	pci_restore_state(pdev);
-	pci_save_state(pdev);
-
-	pci_enable_wake(pdev, PCI_D3hot, 0);
-	pci_enable_wake(pdev, PCI_D3cold, 0);
-
-	hw->link_speed = SPEED_UNKNOWN;
-	alx->int_mask = ALX_ISR_MISC;
-
-	alx_reset_pcie(hw);
-	alx_reset_phy(hw);
-
-	err = alx_reset_mac(hw);
-	if (err) {
-		netif_err(alx, hw, alx->dev,
-			  "resume:reset_mac fail %d\n", err);
-		return -EIO;
+	if (!netif_running(alx->dev)) {
+		err = 0;
+		goto unlock;
 	}
 
-	err = alx_setup_speed_duplex(hw, hw->adv_cfg, hw->flowctrl);
-	if (err) {
-		netif_err(alx, hw, alx->dev,
-			  "resume:setup_speed_duplex fail %d\n", err);
-		return -EIO;
-	}
+	err = __alx_open(alx, true);
+	if (err)
+		goto unlock;
 
-	if (netif_running(netdev)) {
-		rtnl_lock();
-		err = __alx_open(alx, true);
-		rtnl_unlock();
-		if (err)
-			return err;
-	}
+	netif_device_attach(alx->dev);
 
-	netif_device_attach(netdev);
-
-	return 0;
+unlock:
+	mutex_unlock(&alx->mtx);
+	return err;
 }
-#endif
 
-#ifdef CONFIG_PM_SLEEP
 static SIMPLE_DEV_PM_OPS(alx_pm_ops, alx_suspend, alx_resume);
 #define ALX_PM_OPS      (&alx_pm_ops)
 #else
 #define ALX_PM_OPS      NULL
 #endif
+
 
 static pci_ers_result_t alx_pci_error_detected(struct pci_dev *pdev,
 					       pci_channel_state_t state)
@@ -2042,7 +1959,7 @@ static pci_ers_result_t alx_pci_error_detected(struct pci_dev *pdev,
 
 	dev_info(&pdev->dev, "pci error detected\n");
 
-	rtnl_lock();
+	mutex_lock(&alx->mtx);
 
 	if (netif_running(netdev)) {
 		netif_device_detach(netdev);
@@ -2054,7 +1971,7 @@ static pci_ers_result_t alx_pci_error_detected(struct pci_dev *pdev,
 	else
 		pci_disable_device(pdev);
 
-	rtnl_unlock();
+	mutex_unlock(&alx->mtx);
 
 	return rc;
 }
@@ -2067,7 +1984,7 @@ static pci_ers_result_t alx_pci_error_slot_reset(struct pci_dev *pdev)
 
 	dev_info(&pdev->dev, "pci error slot reset\n");
 
-	rtnl_lock();
+	mutex_lock(&alx->mtx);
 
 	if (pci_enable_device(pdev)) {
 		dev_err(&pdev->dev, "Failed to re-enable PCI device after reset\n");
@@ -2075,14 +1992,12 @@ static pci_ers_result_t alx_pci_error_slot_reset(struct pci_dev *pdev)
 	}
 
 	pci_set_master(pdev);
-	pci_enable_wake(pdev, PCI_D3hot, 0);
-	pci_enable_wake(pdev, PCI_D3cold, 0);
 
 	alx_reset_pcie(hw);
 	if (!alx_reset_mac(hw))
 		rc = PCI_ERS_RESULT_RECOVERED;
 out:
-	rtnl_unlock();
+	mutex_unlock(&alx->mtx);
 
 	return rc;
 }
@@ -2094,14 +2009,14 @@ static void alx_pci_error_resume(struct pci_dev *pdev)
 
 	dev_info(&pdev->dev, "pci error resume\n");
 
-	rtnl_lock();
+	mutex_lock(&alx->mtx);
 
 	if (netif_running(netdev)) {
 		alx_activate(alx);
 		netif_device_attach(netdev);
 	}
 
-	rtnl_unlock();
+	mutex_unlock(&alx->mtx);
 }
 
 static const struct pci_error_handlers alx_err_handlers = {
@@ -2131,7 +2046,6 @@ static struct pci_driver alx_driver = {
 	.id_table    = alx_pci_tbl,
 	.probe       = alx_probe,
 	.remove      = alx_remove,
-	.shutdown    = alx_shutdown,
 	.err_handler = &alx_err_handlers,
 	.driver.pm   = ALX_PM_OPS,
 };

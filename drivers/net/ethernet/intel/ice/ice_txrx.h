@@ -118,6 +118,7 @@ static inline int ice_skb_pad(void)
  * freed instead of returned like skb packets.
  */
 #define ICE_TX_FLAGS_DUMMY_PKT	BIT(3)
+#define ICE_TX_FLAGS_TSYN	BIT(4)
 #define ICE_TX_FLAGS_IPV4	BIT(5)
 #define ICE_TX_FLAGS_IPV6	BIT(6)
 #define ICE_TX_FLAGS_TUNNEL	BIT(7)
@@ -163,17 +164,10 @@ struct ice_tx_offload_params {
 };
 
 struct ice_rx_buf {
-	union {
-		struct {
-			dma_addr_t dma;
-			struct page *page;
-			unsigned int page_offset;
-			u16 pagecnt_bias;
-		};
-		struct {
-			struct xdp_buff *xdp;
-		};
-	};
+	dma_addr_t dma;
+	struct page *page;
+	unsigned int page_offset;
+	u16 pagecnt_bias;
 };
 
 struct ice_q_stats {
@@ -269,6 +263,7 @@ struct ice_ring {
 	union {
 		struct ice_tx_buf *tx_buf;
 		struct ice_rx_buf *rx_buf;
+		struct xdp_buff **xdp_buf;
 	};
 	/* CL2 - 2nd cacheline starts here */
 	u16 q_index;			/* Queue number of ring */
@@ -311,6 +306,10 @@ struct ice_ring {
 	u32 txq_teid;			/* Added Tx queue TEID */
 	u16 rx_buf_len;
 	u8 dcb_tc;			/* Traffic class of ring */
+	struct ice_ptp_tx *tx_tstamps;
+	u64 cached_phctime;
+	u8 ptp_rx:1;
+	u8 ptp_tx:1;
 } ____cacheline_internodealigned_in_smp;
 
 static inline bool ice_ring_uses_build_skb(struct ice_ring *ring)

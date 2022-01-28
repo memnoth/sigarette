@@ -29,9 +29,9 @@ struct rpi_firmware {
 	struct mbox_chan *chan; /* The property channel. */
 	struct completion c;
 	u32 enabled;
-	u32 get_throttled;
 
 	struct kref consumers;
+	u32 get_throttled;
 };
 
 static struct platform_device *g_pdev;

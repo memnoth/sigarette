@@ -245,6 +245,23 @@
 /* Enables interrupt generation on scaler profiler interrupt. */
 # define SCALER_DISPCTRL_SCLEIRQ		BIT(0)
 
+/* Enables Display 0 short line and underrun contribution to
+ * SCALER_DISPSTAT_IRQDISP0.  Note that short frame contributions are
+ * always enabled.
+ */
+# define SCALER5_DISPCTRL_DSPEISLUR(x)		BIT(9 + ((x) * 4))
+/* Enables Display 0 end-of-line-N contribution to
+ * SCALER_DISPSTAT_IRQDISP0
+ */
+# define SCALER5_DISPCTRL_DSPEIEOLN(x)		BIT(8 + ((x) * 4))
+/* Enables Display 0 EOF contribution to SCALER_DISPSTAT_IRQDISP0 */
+# define SCALER5_DISPCTRL_DSPEIEOF(x)		BIT(7 + ((x) * 4))
+/* Enables Display 0 VSTART contribution to SCALER_DISPSTAT_IRQDISP0 */
+# define SCALER5_DISPCTRL_DSPVSTART(x)		BIT(6 + ((x) * 4))
+
+# define SCALER5_DISPCTRL_SLVEIRQ		BIT(5)
+# define SCALER5_DISPCTRL_DMAEIRQ		BIT(4)
+
 #define SCALER_DISPSTAT                         0x00000004
 # define SCALER_DISPSTAT_RESP_MASK		VC4_MASK(15, 14)
 # define SCALER_DISPSTAT_RESP_SHIFT		14
@@ -252,6 +269,8 @@
 # define SCALER_DISPSTAT_RESP_EXOKAY		1
 # define SCALER_DISPSTAT_RESP_SLVERR		2
 # define SCALER_DISPSTAT_RESP_DECERR		3
+
+# define SCALER5_DISPSTAT_VSTART(x)		BIT(14 + ((x) * 8))
 
 # define SCALER_DISPSTAT_COBLOW(x)		BIT(13 + ((x) * 8))
 /* Set when the DISPEOLN line is done compositing. */
@@ -274,6 +293,8 @@
 # define SCALER_DISPSTAT_IRQMASK(x)		VC4_MASK(13 + ((x) * 8), \
 							 8 + ((x) * 8))
 
+# define SCALER5_DISPSTAT_IRQMASK(x)		VC4_MASK(14 + ((x) * 8), \
+							 8 + ((x) * 8))
 /* Set on AXI invalid DMA ID error. */
 # define SCALER_DISPSTAT_DMA_ERROR		BIT(7)
 /* Set on AXI slave read decode error */
@@ -490,6 +511,28 @@
 #define SCALER_GAMDATA                          0x000000e0
 #define SCALER_DLIST_START                      0x00002000
 #define SCALER_DLIST_SIZE                       0x00004000
+
+/* Gamma PWL for each channel. 16 points for each of 4 colour channels (alpha
+ * only on channel 2). 8 bytes per entry, offsets first, then gradient:
+ *   Y = GRAD * X + C
+ *
+ * Values for X and C are left justified, and vary depending on the width of
+ * the HVS channel:
+ *    8-bit pipeline: X uses [31:24], C is U8.8 format, and GRAD is U4.8.
+ *   12-bit pipeline: X uses [31:20], C is U12.4 format, and GRAD is U4.8.
+ *
+ * The 3 HVS channels start at 0x400 offsets (ie chan 1 starts at 0x2400, and
+ * chan 2 at 0x2800).
+ */
+#define SCALER5_DSPGAMMA_NUM_POINTS		16
+#define SCALER5_DSPGAMMA_START			0x00002000
+#define SCALER5_DSPGAMMA_CHAN_OFFSET		0x400
+# define SCALER5_DSPGAMMA_OFF_X_MASK		VC4_MASK(31, 20)
+# define SCALER5_DSPGAMMA_OFF_X_SHIFT		20
+# define SCALER5_DSPGAMMA_OFF_C_MASK		VC4_MASK(15, 0)
+# define SCALER5_DSPGAMMA_OFF_C_SHIFT		0
+# define SCALER5_DSPGAMMA_GRAD_MASK		VC4_MASK(11, 0)
+# define SCALER5_DSPGAMMA_GRAD_SHIFT		0
 
 #define SCALER5_DLIST_START			0x00004000
 
@@ -774,7 +817,26 @@ enum {
 # define VC4_HD_CSC_CTL_RGB2YCC			BIT(1)
 # define VC4_HD_CSC_CTL_ENABLE			BIT(0)
 
+# define VC5_MT_CP_CSC_CTL_USE_444_TO_422	BIT(6)
+# define VC5_MT_CP_CSC_CTL_FILTER_MODE_444_TO_422_MASK \
+						VC4_MASK(5, 4)
+# define VC5_MT_CP_CSC_CTL_FILTER_MODE_444_TO_422_STANDARD \
+						3
+# define VC5_MT_CP_CSC_CTL_USE_RNG_SUPPRESSION	BIT(3)
+# define VC5_MT_CP_CSC_CTL_ENABLE		BIT(2)
+# define VC5_MT_CP_CSC_CTL_MODE_MASK		VC4_MASK(1, 0)
+
+# define VC5_MT_CP_CHANNEL_CTL_OUTPUT_REMAP_MASK \
+						VC4_MASK(7, 6)
+# define VC5_MT_CP_CHANNEL_CTL_OUTPUT_REMAP_LEGACY_STYLE \
+						2
+
 # define VC4_DVP_HT_CLOCK_STOP_PIXEL		BIT(1)
+
+# define VC5_DVP_HT_VEC_INTERFACE_CFG_SEL_422_MASK \
+						VC4_MASK(3, 2)
+# define VC5_DVP_HT_VEC_INTERFACE_CFG_SEL_422_FORMAT_422_LEGACY \
+						2
 
 /* HVS display list information. */
 #define HVS_BOOTLOADER_DLIST_END                32

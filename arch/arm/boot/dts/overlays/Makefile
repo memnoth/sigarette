@@ -4,6 +4,7 @@ dtb-$(CONFIG_ARCH_BCM2835) += overlay_map.dtb
 
 dtbo-$(CONFIG_ARCH_BCM2835) += \
 	act-led.dtbo \
+	adafruit-st7735r.dtbo \
 	adafruit18.dtbo \
 	adau1977-adc.dtbo \
 	adau7002-simple.dtbo \
@@ -33,6 +34,7 @@ dtbo-$(CONFIG_ARCH_BCM2835) += \
 	cap1106.dtbo \
 	chipdip-dac.dtbo \
 	cma.dtbo \
+	cutiepi-panel.dtbo \
 	dht11.dtbo \
 	dionaudio-loco.dtbo \
 	dionaudio-loco-v2.dtbo \
@@ -48,6 +50,7 @@ dtbo-$(CONFIG_ARCH_BCM2835) += \
 	enc28j60.dtbo \
 	enc28j60-spi2.dtbo \
 	exc3000.dtbo \
+	fbtft.dtbo \
 	fe-pi-audio.dtbo \
 	fsm-demo.dtbo \
 	ghost-amp.dtbo \
@@ -98,10 +101,12 @@ dtbo-$(CONFIG_ARCH_BCM2835) += \
 	imx290.dtbo \
 	imx378.dtbo \
 	imx477.dtbo \
+	imx519.dtbo \
 	iqaudio-codec.dtbo \
 	iqaudio-dac.dtbo \
 	iqaudio-dacplus.dtbo \
 	iqaudio-digi-wm8804-audio.dtbo \
+	iqs550.dtbo \
 	irs1125.dtbo \
 	jedec-spi-nor.dtbo \
 	justboom-both.dtbo \
@@ -113,6 +118,7 @@ dtbo-$(CONFIG_ARCH_BCM2835) += \
 	mbed-dac.dtbo \
 	mcp23017.dtbo \
 	mcp23s17.dtbo \
+	mcp2515.dtbo \
 	mcp2515-can0.dtbo \
 	mcp2515-can1.dtbo \
 	mcp251xfd.dtbo \
@@ -129,6 +135,7 @@ dtbo-$(CONFIG_ARCH_BCM2835) += \
 	midi-uart5.dtbo \
 	minipitft13.dtbo \
 	miniuart-bt.dtbo \
+	mlx90640.dtbo \
 	mmc.dtbo \
 	mpu6050.dtbo \
 	mz61581.dtbo \
@@ -157,6 +164,7 @@ dtbo-$(CONFIG_ARCH_BCM2835) += \
 	pwm-2chan.dtbo \
 	pwm-ir-tx.dtbo \
 	qca7000.dtbo \
+	qca7000-uart0.dtbo \
 	rotary-encoder.dtbo \
 	rpi-backlight.dtbo \
 	rpi-cirrus-wm5102.dtbo \
@@ -226,6 +234,7 @@ dtbo-$(CONFIG_ARCH_BCM2835) += \
 	vc4-fkms-v3d.dtbo \
 	vc4-fkms-v3d-pi4.dtbo \
 	vc4-kms-dpi-at056tn53v1.dtbo \
+	vc4-kms-dpi-generic.dtbo \
 	vc4-kms-dsi-7inch.dtbo \
 	vc4-kms-dsi-lt070me05000.dtbo \
 	vc4-kms-dsi-lt070me05000-v2.dtbo \
@@ -234,14 +243,19 @@ dtbo-$(CONFIG_ARCH_BCM2835) += \
 	vc4-kms-v3d-pi4.dtbo \
 	vc4-kms-vga666.dtbo \
 	vga666.dtbo \
+	vl805.dtbo \
 	w1-gpio.dtbo \
 	w1-gpio-pullup.dtbo \
 	w5500.dtbo \
 	wittypi.dtbo \
 	wm8960-soundcard.dtbo
 
+# These will simply be copied
+misc-$(CONFIG_ARCH_BCM2835) += README
+
 targets += dtbs dtbs_install
 targets += $(dtbo-y)
+targets += $(misc-y)
 
 always-y	:= $(dtbo-y)
 clean-files	:= *.dtbo

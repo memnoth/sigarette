@@ -850,7 +850,6 @@ static inline void create_debug_files(struct fotg210_hcd *fotg210)
 	struct dentry *root;
 
 	root = debugfs_create_dir(bus->bus_name, fotg210_debug_root);
-	fotg210->debug_dir = root;
 
 	debugfs_create_file("async", S_IRUGO, root, bus, &debug_async_fops);
 	debugfs_create_file("periodic", S_IRUGO, root, bus,
@@ -861,7 +860,9 @@ static inline void create_debug_files(struct fotg210_hcd *fotg210)
 
 static inline void remove_debug_files(struct fotg210_hcd *fotg210)
 {
-	debugfs_remove_recursive(fotg210->debug_dir);
+	struct usb_bus *bus = &fotg210_to_hcd(fotg210)->self;
+
+	debugfs_remove(debugfs_lookup(bus->bus_name, fotg210_debug_root));
 }
 
 /* handshake - spin reading hc until handshake completes or fails
@@ -1857,9 +1858,11 @@ static struct fotg210_qh *fotg210_qh_alloc(struct fotg210_hcd *fotg210,
 	qh = kzalloc(sizeof(*qh), GFP_ATOMIC);
 	if (!qh)
 		goto done;
-	qh->hw = dma_pool_zalloc(fotg210->qh_pool, flags, &dma);
+	qh->hw = (struct fotg210_qh_hw *)
+		dma_pool_alloc(fotg210->qh_pool, flags, &dma);
 	if (!qh->hw)
 		goto fail;
+	memset(qh->hw, 0, sizeof(*qh->hw));
 	qh->qh_dma = dma;
 	INIT_LIST_HEAD(&qh->qtd_list);
 
@@ -4109,7 +4112,7 @@ static int itd_urb_transaction(struct fotg210_iso_stream *stream,
 		} else {
 alloc_itd:
 			spin_unlock_irqrestore(&fotg210->lock, flags);
-			itd = dma_pool_zalloc(fotg210->itd_pool, mem_flags,
+			itd = dma_pool_alloc(fotg210->itd_pool, mem_flags,
 					&itd_dma);
 			spin_lock_irqsave(&fotg210->lock, flags);
 			if (!itd) {
@@ -4119,6 +4122,7 @@ alloc_itd:
 			}
 		}
 
+		memset(itd, 0, sizeof(*itd));
 		itd->itd_dma = itd_dma;
 		list_add(&itd->itd_list, &sched->td_list);
 	}

@@ -1830,6 +1830,14 @@ brcmf_set_key_mgmt(struct net_device *ndev, struct cfg80211_connect_params *sme)
 				profile->use_fwsup = BRCMF_PROFILE_FWSUP_SAE;
 			}
 			break;
+		case WLAN_AKM_SUITE_FT_OVER_SAE:
+			val = WPA3_AUTH_SAE_PSK | WPA2_AUTH_FT;
+			profile->is_ft = true;
+			if (sme->crypto.sae_pwd) {
+				brcmf_dbg(INFO, "using SAE offload\n");
+				profile->use_fwsup = BRCMF_PROFILE_FWSUP_SAE;
+			}
+			break;
 		default:
 			bphy_err(drvr, "invalid cipher group (%d)\n",
 				 sme->crypto.cipher_group);
@@ -2896,8 +2904,13 @@ brcmf_cfg80211_dump_station(struct wiphy *wiphy, struct net_device *ndev,
 					     &cfg->assoclist,
 					     sizeof(cfg->assoclist));
 		if (err) {
-			bphy_err(drvr, "BRCMF_C_GET_ASSOCLIST unsupported, err=%d\n",
-				 err);
+			/* GET_ASSOCLIST unsupported by firmware of older chips */
+			if (err == -EBADE)
+				bphy_info_once(drvr, "BRCMF_C_GET_ASSOCLIST unsupported\n");
+			else
+				bphy_err(drvr, "BRCMF_C_GET_ASSOCLIST failed, err=%d\n",
+					 err);
+
 			cfg->assoclist.count = 0;
 			return -EOPNOTSUPP;
 		}
@@ -6853,7 +6866,12 @@ static int brcmf_setup_wiphybands(struct brcmf_cfg80211_info *cfg)
 
 	err = brcmf_fil_iovar_int_get(ifp, "rxchain", &rxchain);
 	if (err) {
-		bphy_err(drvr, "rxchain error (%d)\n", err);
+		/* rxchain unsupported by firmware of older chips */
+		if (err == -EBADE)
+			bphy_info_once(drvr, "rxchain unsupported\n");
+		else
+			bphy_err(drvr, "rxchain error (%d)\n", err);
+
 		nchain = 1;
 	} else {
 		for (nchain = 0; rxchain; nchain++)
@@ -7445,18 +7463,12 @@ static s32 brcmf_translate_country_code(struct brcmf_pub *drvr, char alpha2[2],
 	struct brcmfmac_pd_cc *country_codes;
 	struct brcmfmac_pd_cc_entry *cc;
 	s32 found_index;
-	char ccode[BRCMF_COUNTRY_BUF_SZ];
-	int rev;
 	int i;
-
-	memcpy(ccode, alpha2, sizeof(ccode));
-	rev = -1;
 
 	country_codes = drvr->settings->country_codes;
 	if (!country_codes) {
-		brcmf_dbg(TRACE, "No country codes configured for device"
-				 " - use requested value\n");
-		goto use_input_value;
+		brcmf_dbg(TRACE, "No country codes configured for device\n");
+		return -EINVAL;
 	}
 
 	if ((alpha2[0] == ccreq->country_abbrev[0]) &&
@@ -7480,14 +7492,10 @@ static s32 brcmf_translate_country_code(struct brcmf_pub *drvr, char alpha2[2],
 		brcmf_dbg(TRACE, "No country code match found\n");
 		return -EINVAL;
 	}
-	rev = country_codes->table[found_index].rev;
-	memcpy(ccode, country_codes->table[found_index].cc,
-	       BRCMF_COUNTRY_BUF_SZ);
-
-use_input_value:
 	memset(ccreq, 0, sizeof(*ccreq));
-	ccreq->rev = cpu_to_le32(rev);
-	memcpy(ccreq->ccode, ccode, sizeof(ccode));
+	ccreq->rev = cpu_to_le32(country_codes->table[found_index].rev);
+	memcpy(ccreq->ccode, country_codes->table[found_index].cc,
+	       BRCMF_COUNTRY_BUF_SZ);
 	ccreq->country_abbrev[0] = alpha2[0];
 	ccreq->country_abbrev[1] = alpha2[1];
 	ccreq->country_abbrev[2] = 0;

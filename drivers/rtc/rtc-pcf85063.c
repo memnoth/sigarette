@@ -21,10 +21,10 @@
 /*
  * Information for this driver was pulled from the following datasheets.
  *
- *  https://www.nxp.com/documents/data_sheet/PCF85063A.pdf
- *  https://www.nxp.com/documents/data_sheet/PCF85063TP.pdf
+ *  https://www.nxp.com/docs/en/data-sheet/PCF85063A.pdf
+ *  https://www.nxp.com/docs/en/data-sheet/PCF85063TP.pdf
  *
- *  PCF85063A -- Rev. 6 — 18 November 2015
+ *  PCF85063A -- Rev. 7 — 30 March 2018
  *  PCF85063TP -- Rev. 4 — 6 May 2015
  *
  *  https://www.microcrystal.com/fileadmin/Media/Products/RTC/App.Manual/RV-8263-C7_App-Manual.pdf
@@ -34,6 +34,7 @@
 #define PCF85063_REG_CTRL1		0x00 /* status */
 #define PCF85063_REG_CTRL1_CAP_SEL	BIT(0)
 #define PCF85063_REG_CTRL1_STOP		BIT(5)
+#define PCF85063_REG_CTRL1_EXT_TEST	BIT(7)
 
 #define PCF85063_REG_CTRL2		0x01
 #define PCF85063_CTRL2_AF		BIT(6)
@@ -117,6 +118,7 @@ static int pcf85063_rtc_set_time(struct device *dev, struct rtc_time *tm)
 	 * reset state until all time/date registers are written
 	 */
 	rc = regmap_update_bits(pcf85063->regmap, PCF85063_REG_CTRL1,
+				PCF85063_REG_CTRL1_EXT_TEST |
 				PCF85063_REG_CTRL1_STOP,
 				PCF85063_REG_CTRL1_STOP);
 	if (rc)

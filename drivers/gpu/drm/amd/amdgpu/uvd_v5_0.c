@@ -250,7 +250,6 @@ static int uvd_v5_0_suspend(void *handle)
 	r = uvd_v5_0_hw_fini(adev);
 	if (r)
 		return r;
-	uvd_v5_0_set_clockgating_state(adev, AMD_CG_STATE_GATE);
 
 	return amdgpu_uvd_suspend(adev);
 }

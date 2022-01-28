@@ -2024,13 +2024,6 @@ void serial8250_do_set_mctrl(struct uart_port *port, unsigned int mctrl)
 	struct uart_8250_port *up = up_to_u8250p(port);
 	unsigned char mcr;
 
-	if (port->rs485.flags & SER_RS485_ENABLED) {
-		if (serial8250_in_MCR(up) & UART_MCR_RTS)
-			mctrl |= TIOCM_RTS;
-		else
-			mctrl &= ~TIOCM_RTS;
-	}
-
 	mcr = serial8250_TIOCM_to_MCR(mctrl);
 
 	mcr = (mcr & up->mcr_mask) | up->mcr_force | up->mcr;
@@ -2520,19 +2513,45 @@ static unsigned int serial8250_do_get_divisor(struct uart_port *port,
 					      unsigned int baud,
 					      unsigned int *frac)
 {
+	upf_t magic_multiplier = port->flags & UPF_MAGIC_MULTIPLIER;
 	struct uart_8250_port *up = up_to_u8250p(port);
 	unsigned int quot;
 
 	/*
-	 * Handle magic divisors for baud rates above baud_base on
-	 * SMSC SuperIO chips.
+	 * Handle magic divisors for baud rates above baud_base on SMSC
+	 * Super I/O chips.  We clamp custom rates from clk/6 and clk/12
+	 * up to clk/4 (0x8001) and clk/8 (0x8002) respectively.  These
+	 * magic divisors actually reprogram the baud rate generator's
+	 * reference clock derived from chips's 14.318MHz clock input.
 	 *
+	 * Documentation claims that with these magic divisors the base
+	 * frequencies of 7.3728MHz and 3.6864MHz are used respectively
+	 * for the extra baud rates of 460800bps and 230400bps rather
+	 * than the usual base frequency of 1.8462MHz.  However empirical
+	 * evidence contradicts that.
+	 *
+	 * Instead bit 7 of the DLM register (bit 15 of the divisor) is
+	 * effectively used as a clock prescaler selection bit for the
+	 * base frequency of 7.3728MHz, always used.  If set to 0, then
+	 * the base frequency is divided by 4 for use by the Baud Rate
+	 * Generator, for the usual arrangement where the value of 1 of
+	 * the divisor produces the baud rate of 115200bps.  Conversely,
+	 * if set to 1 and high-speed operation has been enabled with the
+	 * Serial Port Mode Register in the Device Configuration Space,
+	 * then the base frequency is supplied directly to the Baud Rate
+	 * Generator, so for the divisor values of 0x8001, 0x8002, 0x8003,
+	 * 0x8004, etc. the respective baud rates produced are 460800bps,
+	 * 230400bps, 153600bps, 115200bps, etc.
+	 *
+	 * In all cases only low 15 bits of the divisor are used to divide
+	 * the baud base and therefore 32767 is the maximum divisor value
+	 * possible, even though documentation says that the programmable
+	 * Baud Rate Generator is capable of dividing the internal PLL
+	 * clock by any divisor from 1 to 65535.
 	 */
-	if ((port->flags & UPF_MAGIC_MULTIPLIER) &&
-	    baud == (port->uartclk/4))
+	if (magic_multiplier && baud >= port->uartclk / 6)
 		quot = 0x8001;
-	else if ((port->flags & UPF_MAGIC_MULTIPLIER) &&
-		 baud == (port->uartclk/8))
+	else if (magic_multiplier && baud >= port->uartclk / 12)
 		quot = 0x8002;
 	else if (up->port.type == PORT_NPCM)
 		quot = npcm_get_divisor(up, baud);
@@ -2670,21 +2689,32 @@ static unsigned int serial8250_get_baud_rate(struct uart_port *port,
 void serial8250_update_uartclk(struct uart_port *port, unsigned int uartclk)
 {
 	struct uart_8250_port *up = up_to_u8250p(port);
+	struct tty_port *tport = &port->state->port;
 	unsigned int baud, quot, frac = 0;
 	struct ktermios *termios;
+	struct tty_struct *tty;
 	unsigned long flags;
 
-	mutex_lock(&port->state->port.mutex);
+	tty = tty_port_tty_get(tport);
+	if (!tty) {
+		mutex_lock(&tport->mutex);
+		port->uartclk = uartclk;
+		mutex_unlock(&tport->mutex);
+		return;
+	}
+
+	down_write(&tty->termios_rwsem);
+	mutex_lock(&tport->mutex);
 
 	if (port->uartclk == uartclk)
 		goto out_lock;
 
 	port->uartclk = uartclk;
 
-	if (!tty_port_initialized(&port->state->port))
+	if (!tty_port_initialized(tport))
 		goto out_lock;
 
-	termios = &port->state->port.tty->termios;
+	termios = &tty->termios;
 
 	baud = serial8250_get_baud_rate(port, termios, NULL);
 	quot = serial8250_get_divisor(port, baud, &frac);
@@ -2701,7 +2731,9 @@ void serial8250_update_uartclk(struct uart_port *port, unsigned int uartclk)
 	serial8250_rpm_put(up);
 
 out_lock:
-	mutex_unlock(&port->state->port.mutex);
+	mutex_unlock(&tport->mutex);
+	up_write(&tty->termios_rwsem);
+	tty_kref_put(tty);
 }
 EXPORT_SYMBOL_GPL(serial8250_update_uartclk);
 

@@ -21,6 +21,14 @@
 #include <media/v4l2-fwnode.h>
 #include <media/v4l2-mediabus.h>
 
+static int dpc_enable = 1;
+module_param(dpc_enable, int, 0644);
+MODULE_PARM_DESC(dpc_enable, "Enable on-sensor DPC");
+
+static int trigger_mode;
+module_param(trigger_mode, int, 0644);
+MODULE_PARM_DESC(trigger_mode, "Set vsync trigger mode: 1=source, 2=sink");
+
 #define IMX477_REG_VALUE_08BIT		1
 #define IMX477_REG_VALUE_16BIT		2
 
@@ -93,6 +101,12 @@
 #define IMX477_TEST_PATTERN_GR_DEFAULT	0
 #define IMX477_TEST_PATTERN_B_DEFAULT	0
 #define IMX477_TEST_PATTERN_GB_DEFAULT	0
+
+/* Trigger mode */
+#define IMX477_REG_MC_MODE		0x3f0b
+#define IMX477_REG_MS_SEL		0x3041
+#define IMX477_REG_XVS_IO_CTRL		0x3040
+#define IMX477_REG_EXTOUT_EN		0x4b81
 
 /* Embedded metadata stream structure */
 #define IMX477_EMBEDDED_LINE_WIDTH 16384
@@ -1254,9 +1268,9 @@ static int imx477_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
 	struct imx477 *imx477 = to_imx477(sd);
 	struct v4l2_mbus_framefmt *try_fmt_img =
-		v4l2_subdev_get_try_format(sd, fh->pad, IMAGE_PAD);
+		v4l2_subdev_get_try_format(sd, fh->state, IMAGE_PAD);
 	struct v4l2_mbus_framefmt *try_fmt_meta =
-		v4l2_subdev_get_try_format(sd, fh->pad, METADATA_PAD);
+		v4l2_subdev_get_try_format(sd, fh->state, METADATA_PAD);
 	struct v4l2_rect *try_crop;
 
 	mutex_lock(&imx477->mutex);
@@ -1275,7 +1289,7 @@ static int imx477_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 	try_fmt_meta->field = V4L2_FIELD_NONE;
 
 	/* Initialize try_crop */
-	try_crop = v4l2_subdev_get_try_crop(sd, fh->pad, IMAGE_PAD);
+	try_crop = v4l2_subdev_get_try_crop(sd, fh->state, IMAGE_PAD);
 	try_crop->left = IMX477_PIXEL_ARRAY_LEFT;
 	try_crop->top = IMX477_PIXEL_ARRAY_TOP;
 	try_crop->width = IMX477_PIXEL_ARRAY_WIDTH;
@@ -1403,7 +1417,7 @@ static const struct v4l2_ctrl_ops imx477_ctrl_ops = {
 };
 
 static int imx477_enum_mbus_code(struct v4l2_subdev *sd,
-				 struct v4l2_subdev_pad_config *cfg,
+				 struct v4l2_subdev_state *sd_state,
 				 struct v4l2_subdev_mbus_code_enum *code)
 {
 	struct imx477 *imx477 = to_imx477(sd);
@@ -1428,7 +1442,7 @@ static int imx477_enum_mbus_code(struct v4l2_subdev *sd,
 }
 
 static int imx477_enum_frame_size(struct v4l2_subdev *sd,
-				  struct v4l2_subdev_pad_config *cfg,
+				  struct v4l2_subdev_state *sd_state,
 				  struct v4l2_subdev_frame_size_enum *fse)
 {
 	struct imx477 *imx477 = to_imx477(sd);
@@ -1467,7 +1481,7 @@ static int imx477_enum_frame_size(struct v4l2_subdev *sd,
 
 static void imx477_reset_colorspace(struct v4l2_mbus_framefmt *fmt)
 {
-	fmt->colorspace = V4L2_COLORSPACE_SRGB;
+	fmt->colorspace = V4L2_COLORSPACE_RAW;
 	fmt->ycbcr_enc = V4L2_MAP_YCBCR_ENC_DEFAULT(fmt->colorspace);
 	fmt->quantization = V4L2_MAP_QUANTIZATION_DEFAULT(true,
 							  fmt->colorspace,
@@ -1494,7 +1508,7 @@ static void imx477_update_metadata_pad_format(struct v4l2_subdev_format *fmt)
 }
 
 static int imx477_get_pad_format(struct v4l2_subdev *sd,
-				 struct v4l2_subdev_pad_config *cfg,
+				 struct v4l2_subdev_state *sd_state,
 				 struct v4l2_subdev_format *fmt)
 {
 	struct imx477 *imx477 = to_imx477(sd);
@@ -1506,7 +1520,8 @@ static int imx477_get_pad_format(struct v4l2_subdev *sd,
 
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 		struct v4l2_mbus_framefmt *try_fmt =
-			v4l2_subdev_get_try_format(&imx477->sd, cfg, fmt->pad);
+			v4l2_subdev_get_try_format(&imx477->sd, sd_state,
+						   fmt->pad);
 		/* update the code which could change due to vflip or hflip: */
 		try_fmt->code = fmt->pad == IMAGE_PAD ?
 				imx477_get_format_code(imx477, try_fmt->code) :
@@ -1574,7 +1589,7 @@ static void imx477_set_framing_limits(struct imx477 *imx477)
 }
 
 static int imx477_set_pad_format(struct v4l2_subdev *sd,
-				 struct v4l2_subdev_pad_config *cfg,
+				 struct v4l2_subdev_state *sd_state,
 				 struct v4l2_subdev_format *fmt)
 {
 	struct v4l2_mbus_framefmt *framefmt;
@@ -1603,7 +1618,7 @@ static int imx477_set_pad_format(struct v4l2_subdev *sd,
 					      fmt->format.height);
 		imx477_update_image_pad_format(imx477, mode, fmt);
 		if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
-			framefmt = v4l2_subdev_get_try_format(sd, cfg,
+			framefmt = v4l2_subdev_get_try_format(sd, sd_state,
 							      fmt->pad);
 			*framefmt = fmt->format;
 		} else {
@@ -1613,7 +1628,7 @@ static int imx477_set_pad_format(struct v4l2_subdev *sd,
 		}
 	} else {
 		if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
-			framefmt = v4l2_subdev_get_try_format(sd, cfg,
+			framefmt = v4l2_subdev_get_try_format(sd, sd_state,
 							      fmt->pad);
 			*framefmt = fmt->format;
 		} else {
@@ -1628,12 +1643,13 @@ static int imx477_set_pad_format(struct v4l2_subdev *sd,
 }
 
 static const struct v4l2_rect *
-__imx477_get_pad_crop(struct imx477 *imx477, struct v4l2_subdev_pad_config *cfg,
+__imx477_get_pad_crop(struct imx477 *imx477,
+		      struct v4l2_subdev_state *sd_state,
 		      unsigned int pad, enum v4l2_subdev_format_whence which)
 {
 	switch (which) {
 	case V4L2_SUBDEV_FORMAT_TRY:
-		return v4l2_subdev_get_try_crop(&imx477->sd, cfg, pad);
+		return v4l2_subdev_get_try_crop(&imx477->sd, sd_state, pad);
 	case V4L2_SUBDEV_FORMAT_ACTIVE:
 		return &imx477->mode->crop;
 	}
@@ -1642,7 +1658,7 @@ __imx477_get_pad_crop(struct imx477 *imx477, struct v4l2_subdev_pad_config *cfg,
 }
 
 static int imx477_get_selection(struct v4l2_subdev *sd,
-				struct v4l2_subdev_pad_config *cfg,
+				struct v4l2_subdev_state *sd_state,
 				struct v4l2_subdev_selection *sel)
 {
 	switch (sel->target) {
@@ -1650,7 +1666,7 @@ static int imx477_get_selection(struct v4l2_subdev *sd,
 		struct imx477 *imx477 = to_imx477(sd);
 
 		mutex_lock(&imx477->mutex);
-		sel->r = *__imx477_get_pad_crop(imx477, cfg, sel->pad,
+		sel->r = *__imx477_get_pad_crop(imx477, sd_state, sel->pad,
 						sel->which);
 		mutex_unlock(&imx477->mutex);
 
@@ -1709,6 +1725,25 @@ static int imx477_start_streaming(struct imx477 *imx477)
 	if (ret) {
 		dev_err(&client->dev, "%s failed to set mode\n", __func__);
 		return ret;
+	}
+
+	/* Set on-sensor DPC. */
+	imx477_write_reg(imx477, 0x0b05, IMX477_REG_VALUE_08BIT, !!dpc_enable);
+	imx477_write_reg(imx477, 0x0b06, IMX477_REG_VALUE_08BIT, !!dpc_enable);
+
+	/* Set vsync trigger mode */
+	if (trigger_mode != 0) {
+		/* trigger_mode == 1 for source, 2 for sink */
+		const u32 val = (trigger_mode == 1) ? 1 : 0;
+
+		imx477_write_reg(imx477, IMX477_REG_MC_MODE,
+				 IMX477_REG_VALUE_08BIT, 1);
+		imx477_write_reg(imx477, IMX477_REG_MS_SEL,
+				 IMX477_REG_VALUE_08BIT, val);
+		imx477_write_reg(imx477, IMX477_REG_XVS_IO_CTRL,
+				 IMX477_REG_VALUE_08BIT, val);
+		imx477_write_reg(imx477, IMX477_REG_EXTOUT_EN,
+				 IMX477_REG_VALUE_08BIT, val);
 	}
 
 	/* Apply customized values from user */

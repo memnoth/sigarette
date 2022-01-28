@@ -2106,7 +2106,7 @@ static void _dpk_get_thermal(struct rtw89_dev *rtwdev, u8 kidx,
 	dpk->bp[path][kidx].ther_dpk =
 		ewma_thermal_read(&rtwdev->phystat.avg_thermal[path]);
 
-	rtw89_debug(rtwdev, RTW89_DBG_RFK, "[DPK] thermal@DPK = 0x%x\n",
+	rtw89_debug(rtwdev, RTW89_DBG_RFK, "[DPK] thermal at DPK = 0x%x\n",
 		    dpk->bp[path][kidx].ther_dpk);
 }
 
@@ -2494,7 +2494,7 @@ static u8 _dpk_agc(struct rtw89_dev *rtwdev, enum rtw89_phy_idx phy,
 			if (tmp_txagc == DPK_TXAGC_LOWER) {
 				goout = true;
 				rtw89_debug(rtwdev, RTW89_DBG_RFK,
-					    "[DPK] Txagc@lower bound!!\n");
+					    "[DPK] Txagc at lower bound!!\n");
 			} else {
 				tmp_txagc = _dpk_set_offset(rtwdev, path, 3);
 			}
@@ -2506,7 +2506,7 @@ static u8 _dpk_agc(struct rtw89_dev *rtwdev, enum rtw89_phy_idx phy,
 			if (tmp_txagc == DPK_TXAGC_UPPER) {
 				goout = true;
 				rtw89_debug(rtwdev, RTW89_DBG_RFK,
-					    "[DPK] Txagc@upper bound!!\n");
+					    "[DPK] Txagc at upper bound!!\n");
 			} else {
 				tmp_txagc = _dpk_set_offset(rtwdev, path, -2);
 			}

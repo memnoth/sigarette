@@ -32,6 +32,7 @@
 #include <linux/clk.h>
 #include <linux/component.h>
 #include <linux/of_device.h>
+#include <linux/pm_runtime.h>
 
 #include <drm/drm_atomic.h>
 #include <drm/drm_atomic_helper.h>
@@ -42,6 +43,7 @@
 #include <drm/drm_vblank.h>
 
 #include "vc4_drv.h"
+#include "vc4_hdmi.h"
 #include "vc4_regs.h"
 
 #define HVS_FIFO_LATENCY_PIX	6
@@ -292,6 +294,23 @@ struct drm_encoder *vc4_get_crtc_encoder(struct drm_crtc *crtc,
 	return NULL;
 }
 
+#define drm_for_each_connector_mask(connector, dev, connector_mask) \
+	list_for_each_entry((connector), &(dev)->mode_config.connector_list, head) \
+		for_each_if ((connector_mask) & drm_connector_mask(connector))
+
+struct drm_connector *vc4_get_crtc_connector(struct drm_crtc *crtc,
+					     struct drm_crtc_state *state)
+{
+	struct drm_connector *connector;
+
+	WARN_ON(hweight32(state->connector_mask) > 1);
+
+	drm_for_each_connector_mask(connector, crtc->dev, state->connector_mask)
+		return connector;
+
+	return NULL;
+}
+
 static void vc4_crtc_pixelvalve_reset(struct drm_crtc *crtc)
 {
 	struct vc4_crtc *vc4_crtc = to_vc4_crtc(crtc);
@@ -391,6 +410,7 @@ static void vc4_crtc_config_pv(struct drm_crtc *crtc, struct drm_encoder *encode
 		CRTC_WRITE(PV_V_CONTROL,
 			   PV_VCONTROL_CONTINUOUS |
 			   (is_dsi ? PV_VCONTROL_DSI : 0));
+		CRTC_WRITE(PV_VSYNCD_EVEN, 0);
 	}
 
 	CRTC_WRITE(PV_VERTA,
@@ -501,8 +521,10 @@ int vc4_crtc_disable_at_boot(struct drm_crtc *crtc)
 	enum vc4_encoder_type encoder_type;
 	const struct vc4_pv_data *pv_data;
 	struct drm_encoder *encoder;
+	struct vc4_hdmi *vc4_hdmi;
 	unsigned encoder_sel;
 	int channel;
+	int ret;
 
 	if (!(of_device_is_compatible(vc4_crtc->pdev->dev.of_node,
 				      "brcm,bcm2711-pixelvalve2") ||
@@ -530,7 +552,20 @@ int vc4_crtc_disable_at_boot(struct drm_crtc *crtc)
 	if (WARN_ON(!encoder))
 		return 0;
 
-	return vc4_crtc_disable(crtc, encoder, NULL, channel);
+	vc4_hdmi = encoder_to_vc4_hdmi(encoder);
+	ret = pm_runtime_resume_and_get(&vc4_hdmi->pdev->dev);
+	if (ret)
+		return ret;
+
+	ret = vc4_crtc_disable(crtc, encoder, NULL, channel);
+	if (ret)
+		return ret;
+
+	ret = pm_runtime_put(&vc4_hdmi->pdev->dev);
+	if (ret)
+		return ret;
+
+	return 0;
 }
 
 static void vc4_crtc_atomic_disable(struct drm_crtc *crtc,
@@ -717,14 +752,14 @@ static void vc4_crtc_handle_page_flip(struct vc4_crtc *vc4_crtc)
 	struct drm_crtc *crtc = &vc4_crtc->base;
 	struct drm_device *dev = crtc->dev;
 	struct vc4_dev *vc4 = to_vc4_dev(dev);
-	struct vc4_crtc_state *vc4_state = to_vc4_crtc_state(crtc->state);
-	u32 chan = vc4_state->assigned_channel;
+	u32 chan = vc4_crtc->current_hvs_channel;
 	unsigned long flags;
 
 	spin_lock_irqsave(&dev->event_lock, flags);
+	spin_lock(&vc4_crtc->irq_lock);
 	if (vc4_crtc->event &&
-	    (vc4_state->mm.start == HVS_READ(SCALER_DISPLACTX(chan)) ||
-	     vc4_state->feed_txp)) {
+	    (vc4_crtc->current_dlist == HVS_READ(SCALER_DISPLACTX(chan)) ||
+	     vc4_crtc->feeds_txp)) {
 		drm_crtc_send_vblank_event(crtc, vc4_crtc->event);
 		vc4_crtc->event = NULL;
 		drm_crtc_vblank_put(crtc);
@@ -737,6 +772,7 @@ static void vc4_crtc_handle_page_flip(struct vc4_crtc *vc4_crtc)
 		 */
 		vc4_hvs_unmask_underrun(dev, chan);
 	}
+	spin_unlock(&vc4_crtc->irq_lock);
 	spin_unlock_irqrestore(&dev->event_lock, flags);
 }
 
@@ -781,7 +817,6 @@ vc4_async_page_flip_complete(struct vc4_seqno_cb *cb)
 		container_of(cb, struct vc4_async_flip_state, cb);
 	struct drm_crtc *crtc = flip_state->crtc;
 	struct drm_device *dev = crtc->dev;
-	struct vc4_dev *vc4 = to_vc4_dev(dev);
 	struct drm_plane *plane = crtc->primary;
 
 	vc4_plane_async_set_fb(plane, flip_state->fb);
@@ -813,8 +848,6 @@ vc4_async_page_flip_complete(struct vc4_seqno_cb *cb)
 	}
 
 	kfree(flip_state);
-
-	up(&vc4->async_modeset);
 }
 
 /* Implements async (non-vblank-synced) page flips.
@@ -829,7 +862,6 @@ static int vc4_async_page_flip(struct drm_crtc *crtc,
 			       uint32_t flags)
 {
 	struct drm_device *dev = crtc->dev;
-	struct vc4_dev *vc4 = to_vc4_dev(dev);
 	struct drm_plane *plane = crtc->primary;
 	int ret = 0;
 	struct vc4_async_flip_state *flip_state;
@@ -857,15 +889,6 @@ static int vc4_async_page_flip(struct drm_crtc *crtc,
 	flip_state->fb = fb;
 	flip_state->crtc = crtc;
 	flip_state->event = event;
-
-	/* Make sure all other async modesetes have landed. */
-	ret = down_interruptible(&vc4->async_modeset);
-	if (ret) {
-		drm_framebuffer_put(fb);
-		vc4_bo_dec_usecnt(bo);
-		kfree(flip_state);
-		return ret;
-	}
 
 	/* Save the current FB before it's replaced by the new one in
 	 * drm_atomic_set_fb_for_plane(). We'll need the old FB in
@@ -915,7 +938,6 @@ struct drm_crtc_state *vc4_crtc_duplicate_state(struct drm_crtc *crtc)
 		return NULL;
 
 	old_vc4_state = to_vc4_crtc_state(crtc->state);
-	vc4_state->feed_txp = old_vc4_state->feed_txp;
 	vc4_state->margins = old_vc4_state->margins;
 	vc4_state->assigned_channel = old_vc4_state->assigned_channel;
 
@@ -976,6 +998,7 @@ static const struct drm_crtc_funcs vc4_crtc_funcs = {
 static const struct drm_crtc_helper_funcs vc4_crtc_helper_funcs = {
 	.mode_valid = vc4_crtc_mode_valid,
 	.atomic_check = vc4_crtc_atomic_check,
+	.atomic_begin = vc4_hvs_atomic_begin,
 	.atomic_flush = vc4_hvs_atomic_flush,
 	.atomic_enable = vc4_crtc_atomic_enable,
 	.atomic_disable = vc4_crtc_atomic_disable,
@@ -1150,25 +1173,43 @@ int vc4_crtc_init(struct drm_device *drm, struct vc4_crtc *vc4_crtc,
 		return PTR_ERR(primary_plane);
 	}
 
+	spin_lock_init(&vc4_crtc->irq_lock);
 	drm_crtc_init_with_planes(drm, crtc, primary_plane, NULL,
 				  crtc_funcs, NULL);
 	drm_crtc_helper_add(crtc, crtc_helper_funcs);
 
 	if (!vc4->hvs->hvs5) {
 		drm_mode_crtc_set_gamma_size(crtc, ARRAY_SIZE(vc4_crtc->lut_r));
-
 		drm_crtc_enable_color_mgmt(crtc, 0, false, crtc->gamma_size);
+	}
 
+
+	if (!vc4->hvs->hvs5) {
 		/* We support CTM, but only for one CRTC at a time. It's therefore
 		 * implemented as private driver state in vc4_kms, not here.
 		 */
-		drm_crtc_enable_color_mgmt(crtc, 0, true, crtc->gamma_size);
-	}
+		drm_crtc_enable_color_mgmt(crtc, 0, true, 0);
 
-	for (i = 0; i < crtc->gamma_size; i++) {
-		vc4_crtc->lut_r[i] = i;
-		vc4_crtc->lut_g[i] = i;
-		vc4_crtc->lut_b[i] = i;
+		/* Initialize the VC4 gamma LUTs */
+		for (i = 0; i < crtc->gamma_size; i++) {
+			vc4_crtc->lut_r[i] = i;
+			vc4_crtc->lut_g[i] = i;
+			vc4_crtc->lut_b[i] = i;
+		}
+	} else {
+		/* Initialize the VC5 gamma PWL entries. Assume 12-bit pipeline,
+		 * evenly spread over full range.
+		 */
+		for (i = 0; i < SCALER5_DSPGAMMA_NUM_POINTS; i++) {
+			vc4_crtc->pwl_r[i] =
+				VC5_HVS_SET_GAMMA_ENTRY(i << 8, i << 12, 1 << 8);
+			vc4_crtc->pwl_g[i] =
+				VC5_HVS_SET_GAMMA_ENTRY(i << 8, i << 12, 1 << 8);
+			vc4_crtc->pwl_b[i] =
+				VC5_HVS_SET_GAMMA_ENTRY(i << 8, i << 12, 1 << 8);
+			vc4_crtc->pwl_a[i] =
+				VC5_HVS_SET_GAMMA_ENTRY(i << 8, i << 12, 1 << 8);
+		}
 	}
 
 	return 0;

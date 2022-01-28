@@ -336,7 +336,7 @@ struct edid {
 	u8 features;
 	/* Color characteristics */
 	u8 red_green_lo;
-	u8 black_white_lo;
+	u8 blue_white_lo;
 	u8 red_x;
 	u8 red_y;
 	u8 green_x;
@@ -401,8 +401,8 @@ drm_hdmi_vendor_infoframe_from_display_mode(struct hdmi_vendor_infoframe *frame,
 					    const struct drm_display_mode *mode);
 
 void
-drm_hdmi_avi_infoframe_colorspace(struct hdmi_avi_infoframe *frame,
-				  const struct drm_connector_state *conn_state);
+drm_hdmi_avi_infoframe_colorimetry(struct hdmi_avi_infoframe *frame,
+				   const struct drm_connector_state *conn_state);
 
 void
 drm_hdmi_avi_infoframe_bars(struct hdmi_avi_infoframe *frame,

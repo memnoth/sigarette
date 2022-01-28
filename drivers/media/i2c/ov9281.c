@@ -52,7 +52,11 @@
 #define OV9281_REG_EXPOSURE		0x3500
 #define	OV9281_EXPOSURE_MIN		4
 #define	OV9281_EXPOSURE_STEP		1
-#define OV9281_VTS_MAX			0x7fff
+/*
+ * Number of lines less than frame length (VTS) that exposure must be.
+ * Datasheet states 25, although empirically 5 appears to work.
+ */
+#define OV9281_EXPOSURE_OFFSET		25
 
 #define OV9281_REG_GAIN_H		0x3508
 #define OV9281_REG_GAIN_L		0x3509
@@ -69,6 +73,7 @@
 #define OV9281_TEST_PATTERN_DISABLE	0x0
 
 #define OV9281_REG_VTS			0x380e
+#define OV9281_VTS_MAX			0x7fff
 
 /*
  * OV9281 native and active pixel array size.
@@ -492,7 +497,7 @@ ov9281_find_best_fit(struct v4l2_subdev_format *fmt)
 }
 
 static int ov9281_set_fmt(struct v4l2_subdev *sd,
-			  struct v4l2_subdev_pad_config *cfg,
+			  struct v4l2_subdev_state *sd_state,
 			  struct v4l2_subdev_format *fmt)
 {
 	struct ov9281 *ov9281 = to_ov9281(sd);
@@ -507,7 +512,7 @@ static int ov9281_set_fmt(struct v4l2_subdev *sd,
 	fmt->format.width = mode->width;
 	fmt->format.height = mode->height;
 	fmt->format.field = V4L2_FIELD_NONE;
-	fmt->format.colorspace = V4L2_COLORSPACE_SRGB;
+	fmt->format.colorspace = V4L2_COLORSPACE_RAW;
 	fmt->format.ycbcr_enc =
 			V4L2_MAP_YCBCR_ENC_DEFAULT(fmt->format.colorspace);
 	fmt->format.quantization =
@@ -517,7 +522,7 @@ static int ov9281_set_fmt(struct v4l2_subdev *sd,
 		V4L2_MAP_XFER_FUNC_DEFAULT(fmt->format.colorspace);
 
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
-		*v4l2_subdev_get_try_format(sd, cfg, fmt->pad) = fmt->format;
+		*v4l2_subdev_get_try_format(sd, sd_state, fmt->pad) = fmt->format;
 	} else {
 		ov9281->cur_mode = mode;
 		ov9281->code = fmt->format.code;
@@ -543,7 +548,7 @@ static int ov9281_set_fmt(struct v4l2_subdev *sd,
 }
 
 static int ov9281_get_fmt(struct v4l2_subdev *sd,
-			  struct v4l2_subdev_pad_config *cfg,
+			  struct v4l2_subdev_state *sd_state,
 			  struct v4l2_subdev_format *fmt)
 {
 	struct ov9281 *ov9281 = to_ov9281(sd);
@@ -551,13 +556,14 @@ static int ov9281_get_fmt(struct v4l2_subdev *sd,
 
 	mutex_lock(&ov9281->mutex);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
-		fmt->format = *v4l2_subdev_get_try_format(sd, cfg, fmt->pad);
+		fmt->format = *v4l2_subdev_get_try_format(sd, sd_state,
+							  fmt->pad);
 	} else {
 		fmt->format.width = mode->width;
 		fmt->format.height = mode->height;
 		fmt->format.code = ov9281->code;
 		fmt->format.field = V4L2_FIELD_NONE;
-		fmt->format.colorspace = V4L2_COLORSPACE_SRGB;
+		fmt->format.colorspace = V4L2_COLORSPACE_RAW;
 		fmt->format.ycbcr_enc =
 			V4L2_MAP_YCBCR_ENC_DEFAULT(fmt->format.colorspace);
 		fmt->format.quantization =
@@ -573,7 +579,7 @@ static int ov9281_get_fmt(struct v4l2_subdev *sd,
 }
 
 static int ov9281_enum_mbus_code(struct v4l2_subdev *sd,
-				 struct v4l2_subdev_pad_config *cfg,
+				 struct v4l2_subdev_state *sd_state,
 				 struct v4l2_subdev_mbus_code_enum *code)
 {
 	switch (code->index) {
@@ -591,7 +597,7 @@ static int ov9281_enum_mbus_code(struct v4l2_subdev *sd,
 }
 
 static int ov9281_enum_frame_sizes(struct v4l2_subdev *sd,
-				   struct v4l2_subdev_pad_config *cfg,
+				   struct v4l2_subdev_state *sd_state,
 				   struct v4l2_subdev_frame_size_enum *fse)
 {
 	if (fse->index >= ARRAY_SIZE(supported_modes))
@@ -659,12 +665,14 @@ static int ov9281_set_ctrl_vflip(struct ov9281 *ov9281, int value)
 }
 
 static const struct v4l2_rect *
-__ov9281_get_pad_crop(struct ov9281 *ov9281, struct v4l2_subdev_pad_config *cfg,
+__ov9281_get_pad_crop(struct ov9281 *ov9281,
+		      struct v4l2_subdev_state *sd_state,
 		      unsigned int pad, enum v4l2_subdev_format_whence which)
 {
 	switch (which) {
 	case V4L2_SUBDEV_FORMAT_TRY:
-		return v4l2_subdev_get_try_crop(&ov9281->subdev, cfg, pad);
+		return v4l2_subdev_get_try_crop(&ov9281->subdev, sd_state,
+						pad);
 	case V4L2_SUBDEV_FORMAT_ACTIVE:
 		return &ov9281->cur_mode->crop;
 	}
@@ -673,7 +681,7 @@ __ov9281_get_pad_crop(struct ov9281 *ov9281, struct v4l2_subdev_pad_config *cfg,
 }
 
 static int ov9281_get_selection(struct v4l2_subdev *sd,
-				struct v4l2_subdev_pad_config *cfg,
+				struct v4l2_subdev_state *sd_state,
 				struct v4l2_subdev_selection *sel)
 {
 	switch (sel->target) {
@@ -681,7 +689,7 @@ static int ov9281_get_selection(struct v4l2_subdev *sd,
 		struct ov9281 *ov9281 = to_ov9281(sd);
 
 		mutex_lock(&ov9281->mutex);
-		sel->r = *__ov9281_get_pad_crop(ov9281, cfg, sel->pad,
+		sel->r = *__ov9281_get_pad_crop(ov9281, sd_state, sel->pad,
 						sel->which);
 		mutex_unlock(&ov9281->mutex);
 
@@ -899,7 +907,7 @@ static int ov9281_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
 	struct ov9281 *ov9281 = to_ov9281(sd);
 	struct v4l2_mbus_framefmt *try_fmt =
-				v4l2_subdev_get_try_format(sd, fh->pad, 0);
+				v4l2_subdev_get_try_format(sd, fh->state, 0);
 	const struct ov9281_mode *def_mode = &supported_modes[0];
 
 	mutex_lock(&ov9281->mutex);
@@ -908,7 +916,7 @@ static int ov9281_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 	try_fmt->height = def_mode->height;
 	try_fmt->code = MEDIA_BUS_FMT_Y10_1X10;
 	try_fmt->field = V4L2_FIELD_NONE;
-	try_fmt->colorspace = V4L2_COLORSPACE_SRGB;
+	try_fmt->colorspace = V4L2_COLORSPACE_RAW;
 	try_fmt->ycbcr_enc = V4L2_MAP_YCBCR_ENC_DEFAULT(try_fmt->colorspace);
 	try_fmt->quantization =
 		V4L2_MAP_QUANTIZATION_DEFAULT(true, try_fmt->colorspace,
@@ -964,7 +972,7 @@ static int ov9281_set_ctrl(struct v4l2_ctrl *ctrl)
 	switch (ctrl->id) {
 	case V4L2_CID_VBLANK:
 		/* Update max exposure while meeting expected vblanking */
-		max = ov9281->cur_mode->height + ctrl->val - 4;
+		max = ov9281->cur_mode->height + ctrl->val - OV9281_EXPOSURE_OFFSET;
 		__v4l2_ctrl_modify_range(ov9281->exposure,
 					 ov9281->exposure->minimum, max,
 					 ov9281->exposure->step,
@@ -1059,7 +1067,7 @@ static int ov9281_initialize_controls(struct ov9281 *ov9281)
 					   OV9281_VTS_MAX - mode->height, 1,
 					   vblank_def);
 
-	exposure_max = mode->vts_def - 4;
+	exposure_max = mode->vts_def - OV9281_EXPOSURE_OFFSET;
 	ov9281->exposure = v4l2_ctrl_new_std(handler, &ov9281_ctrl_ops,
 					     V4L2_CID_EXPOSURE,
 					     OV9281_EXPOSURE_MIN, exposure_max,

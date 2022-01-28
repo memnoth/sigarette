@@ -120,7 +120,7 @@ static struct unwindme *unwindme;
 #define UWM_REGS		0x2	/* Pass regs to test_unwind(). */
 #define UWM_SP			0x4	/* Pass sp to test_unwind(). */
 #define UWM_CALLER		0x8	/* Unwind starting from caller. */
-#define UWM_SWITCH_STACK	0x10	/* Use CALL_ON_STACK. */
+#define UWM_SWITCH_STACK	0x10	/* Use call_on_stack. */
 #define UWM_IRQ			0x20	/* Unwind from irq context. */
 #define UWM_PGM			0x40	/* Unwind from program check handler. */
 
@@ -171,10 +171,11 @@ static noinline int unwindme_func4(struct unwindme *u)
 		}
 
 		/*
-		 * trigger specification exception
+		 * Trigger operation exception; use insn notation to bypass
+		 * llvm's integrated assembler sanity checks.
 		 */
 		asm volatile(
-			"	mvcl	%%r1,%%r1\n"
+			"	.insn	e,0x0000\n"	/* illegal opcode */
 			"0:	nopr	%%r7\n"
 			EX_TABLE(0b, 0b)
 			:);
@@ -211,7 +212,8 @@ static noinline int unwindme_func2(struct unwindme *u)
 	if (u->flags & UWM_SWITCH_STACK) {
 		local_irq_save(flags);
 		local_mcck_disable();
-		rc = CALL_ON_STACK(unwindme_func3, S390_lowcore.nodat_stack, 1, u);
+		rc = call_on_stack(1, S390_lowcore.nodat_stack,
+				   int, unwindme_func3, struct unwindme *, u);
 		local_mcck_enable();
 		local_irq_restore(flags);
 		return rc;

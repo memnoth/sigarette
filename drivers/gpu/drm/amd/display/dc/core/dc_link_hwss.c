@@ -16,6 +16,7 @@
 #include "resource.h"
 #include "link_enc_cfg.h"
 #include "clk_mgr.h"
+#include "inc/link_dpcd.h"
 
 static uint8_t convert_to_count(uint8_t lttpr_repeater_count)
 {
@@ -47,36 +48,6 @@ static inline bool is_immediate_downstream(struct dc_link *link, uint32_t offset
 	return (convert_to_count(link->dpcd_caps.lttpr_caps.phy_repeater_cnt) == offset);
 }
 
-enum dc_status core_link_read_dpcd(
-	struct dc_link *link,
-	uint32_t address,
-	uint8_t *data,
-	uint32_t size)
-{
-	if (!link->aux_access_disabled &&
-			!dm_helpers_dp_read_dpcd(link->ctx,
-			link, address, data, size)) {
-		return DC_ERROR_UNEXPECTED;
-	}
-
-	return DC_OK;
-}
-
-enum dc_status core_link_write_dpcd(
-	struct dc_link *link,
-	uint32_t address,
-	const uint8_t *data,
-	uint32_t size)
-{
-	if (!link->aux_access_disabled &&
-			!dm_helpers_dp_write_dpcd(link->ctx,
-			link, address, data, size)) {
-		return DC_ERROR_UNEXPECTED;
-	}
-
-	return DC_OK;
-}
-
 void dp_receiver_power_ctrl(struct dc_link *link, bool on)
 {
 	uint8_t state;
@@ -88,6 +59,13 @@ void dp_receiver_power_ctrl(struct dc_link *link, bool on)
 
 	core_link_write_dpcd(link, DP_SET_POWER, &state,
 			sizeof(state));
+}
+
+void dp_source_sequence_trace(struct dc_link *link, uint8_t dp_test_mode)
+{
+	if (link->dc->debug.enable_driver_sequence_debug)
+		core_link_write_dpcd(link, DP_SOURCE_SEQUENCE,
+					&dp_test_mode, sizeof(dp_test_mode));
 }
 
 void dp_enable_link_phy(
@@ -108,7 +86,7 @@ void dp_enable_link_phy(
 
 	/* Link should always be assigned encoder when en-/disabling. */
 	if (link->is_dig_mapping_flexible && dc->res_pool->funcs->link_encs_assign)
-		link_enc = link_enc_cfg_get_link_enc_used_by_link(link->dc->current_state, link);
+		link_enc = link_enc_cfg_get_link_enc_used_by_link(dc, link);
 	else
 		link_enc = link->link_enc;
 	ASSERT(link_enc);
@@ -161,6 +139,7 @@ void dp_enable_link_phy(
 	if (dmcu != NULL && dmcu->funcs->unlock_phy)
 		dmcu->funcs->unlock_phy(dmcu);
 
+	dp_source_sequence_trace(link, DPCD_SOURCE_SEQ_AFTER_ENABLE_LINK_PHY);
 	dp_receiver_power_ctrl(link, true);
 }
 
@@ -239,7 +218,7 @@ void dp_disable_link_phy(struct dc_link *link, enum signal_type signal)
 
 	/* Link should always be assigned encoder when en-/disabling. */
 	if (link->is_dig_mapping_flexible && dc->res_pool->funcs->link_encs_assign)
-		link_enc = link_enc_cfg_get_link_enc_used_by_link(link->dc->current_state, link);
+		link_enc = link_enc_cfg_get_link_enc_used_by_link(dc, link);
 	else
 		link_enc = link->link_enc;
 	ASSERT(link_enc);
@@ -261,6 +240,8 @@ void dp_disable_link_phy(struct dc_link *link, enum signal_type signal)
 		if (dmcu != NULL && dmcu->funcs->unlock_phy)
 			dmcu->funcs->unlock_phy(dmcu);
 	}
+
+	dp_source_sequence_trace(link, DPCD_SOURCE_SEQ_AFTER_DISABLE_LINK_PHY);
 
 	/* Clear current link setting.*/
 	memset(&link->cur_link_settings, 0,
@@ -332,7 +313,16 @@ void dp_set_hw_test_pattern(
 	uint32_t custom_pattern_size)
 {
 	struct encoder_set_dp_phy_pattern_param pattern_param = {0};
-	struct link_encoder *encoder = link->link_enc;
+	struct link_encoder *encoder;
+
+	/* Access link encoder based on whether it is statically
+	 * or dynamically assigned to a link.
+	 */
+	if (link->is_dig_mapping_flexible &&
+			link->dc->res_pool->funcs->link_encs_assign)
+		encoder = link_enc_cfg_get_link_enc_used_by_link(link->ctx->dc, link);
+	else
+		encoder = link->link_enc;
 
 	pattern_param.dp_phy_pattern = test_pattern;
 	pattern_param.custom_pattern = custom_pattern;
@@ -340,6 +330,7 @@ void dp_set_hw_test_pattern(
 	pattern_param.dp_panel_mode = dp_get_panel_mode(link);
 
 	encoder->funcs->dp_set_phy_pattern(encoder, &pattern_param);
+	dp_source_sequence_trace(link, DPCD_SOURCE_SEQ_AFTER_SET_SOURCE_PATTERN);
 }
 
 void dp_retrain_link_dp_test(struct dc_link *link,
@@ -358,7 +349,7 @@ void dp_retrain_link_dp_test(struct dc_link *link,
 			pipes[i].stream->link == link) {
 			udelay(100);
 
-			pipes[i].stream_res.stream_enc->funcs->dp_blank(
+			pipes[i].stream_res.stream_enc->funcs->dp_blank(link,
 					pipes[i].stream_res.stream_enc);
 
 			/* disable any test pattern that might be active */
@@ -371,9 +362,10 @@ void dp_retrain_link_dp_test(struct dc_link *link,
 			if ((&pipes[i])->stream_res.audio && !link->dc->debug.az_endpoint_mute_only)
 				(&pipes[i])->stream_res.audio->funcs->az_disable((&pipes[i])->stream_res.audio);
 
-			link->link_enc->funcs->disable_output(
-					link->link_enc,
-					SIGNAL_TYPE_DISPLAY_PORT);
+			if (link->link_enc)
+				link->link_enc->funcs->disable_output(
+						link->link_enc,
+						SIGNAL_TYPE_DISPLAY_PORT);
 
 			/* Clear current link setting. */
 			memset(&link->cur_link_settings, 0,
@@ -384,7 +376,8 @@ void dp_retrain_link_dp_test(struct dc_link *link,
 					skip_video_pattern,
 					LINK_TRAINING_ATTEMPTS,
 					&pipes[i],
-					SIGNAL_TYPE_DISPLAY_PORT);
+					SIGNAL_TYPE_DISPLAY_PORT,
+					false);
 
 			link->dc->hwss.enable_stream(&pipes[i]);
 

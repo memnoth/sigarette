@@ -112,6 +112,7 @@ static int pps_gpio_setup(struct device *dev)
 
 	data->assert_falling_edge =
 		device_property_read_bool(dev, "assert-falling-edge");
+
 	data->capture_clear =
 		device_property_read_bool(dev, "capture-clear");
 

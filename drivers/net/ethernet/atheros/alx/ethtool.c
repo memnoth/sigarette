@@ -46,8 +46,6 @@
 #include "reg.h"
 #include "hw.h"
 
-extern const bool enable_wol;
-
 /* The order of these strings must match the order of the fields in
  * struct alx_hw_stats
  * See hw.h
@@ -165,8 +163,10 @@ static int alx_get_link_ksettings(struct net_device *netdev,
 		}
 	}
 
+	mutex_lock(&alx->mtx);
 	cmd->base.speed = hw->link_speed;
 	cmd->base.duplex = hw->duplex;
+	mutex_unlock(&alx->mtx);
 
 	ethtool_convert_legacy_u32_to_link_mode(cmd->link_modes.supported,
 						supported);
@@ -183,8 +183,7 @@ static int alx_set_link_ksettings(struct net_device *netdev,
 	struct alx_hw *hw = &alx->hw;
 	u32 adv_cfg;
 	u32 advertising;
-
-	ASSERT_RTNL();
+	int ret;
 
 	ethtool_convert_link_mode_to_legacy_u32(&advertising,
 						cmd->link_modes.advertising);
@@ -202,7 +201,12 @@ static int alx_set_link_ksettings(struct net_device *netdev,
 	}
 
 	hw->adv_cfg = adv_cfg;
-	return alx_setup_speed_duplex(hw, adv_cfg, hw->flowctrl);
+
+	mutex_lock(&alx->mtx);
+	ret = alx_setup_speed_duplex(hw, adv_cfg, hw->flowctrl);
+	mutex_unlock(&alx->mtx);
+
+	return ret;
 }
 
 static void alx_get_pauseparam(struct net_device *netdev,
@@ -211,10 +215,12 @@ static void alx_get_pauseparam(struct net_device *netdev,
 	struct alx_priv *alx = netdev_priv(netdev);
 	struct alx_hw *hw = &alx->hw;
 
+	mutex_lock(&alx->mtx);
 	pause->autoneg = !!(hw->flowctrl & ALX_FC_ANEG &&
 			    hw->adv_cfg & ADVERTISED_Autoneg);
 	pause->tx_pause = !!(hw->flowctrl & ALX_FC_TX);
 	pause->rx_pause = !!(hw->flowctrl & ALX_FC_RX);
+	mutex_unlock(&alx->mtx);
 }
 
 
@@ -234,7 +240,7 @@ static int alx_set_pauseparam(struct net_device *netdev,
 	if (pause->autoneg)
 		fc |= ALX_FC_ANEG;
 
-	ASSERT_RTNL();
+	mutex_lock(&alx->mtx);
 
 	/* restart auto-neg for auto-mode */
 	if (hw->adv_cfg & ADVERTISED_Autoneg) {
@@ -247,8 +253,10 @@ static int alx_set_pauseparam(struct net_device *netdev,
 
 	if (reconfig_phy) {
 		err = alx_setup_speed_duplex(hw, hw->adv_cfg, fc);
-		if (err)
+		if (err) {
+			mutex_unlock(&alx->mtx);
 			return err;
+		}
 	}
 
 	/* flow control on mac */
@@ -256,6 +264,7 @@ static int alx_set_pauseparam(struct net_device *netdev,
 		alx_cfg_mac_flowcontrol(hw, fc);
 
 	hw->flowctrl = fc;
+	mutex_unlock(&alx->mtx);
 
 	return 0;
 }
@@ -312,50 +321,11 @@ static int alx_get_sset_count(struct net_device *netdev, int sset)
 	}
 }
 
-static void alx_get_wol(struct net_device *netdev, struct ethtool_wolinfo *wol)
-{
-	struct alx_priv *alx = netdev_priv(netdev);
-	struct alx_hw *hw = &alx->hw;
-
-	if (!enable_wol)
-		return;
-
-	wol->supported = WAKE_MAGIC | WAKE_PHY;
-	wol->wolopts = 0;
-
-	if (hw->sleep_ctrl & ALX_SLEEP_WOL_MAGIC)
-		wol->wolopts |= WAKE_MAGIC;
-	if (hw->sleep_ctrl & ALX_SLEEP_WOL_PHY)
-		wol->wolopts |= WAKE_PHY;
-}
-
-static int alx_set_wol(struct net_device *netdev, struct ethtool_wolinfo *wol)
-{
-	struct alx_priv *alx = netdev_priv(netdev);
-	struct alx_hw *hw = &alx->hw;
-
-	if (!enable_wol || (wol->wolopts & ~(WAKE_MAGIC | WAKE_PHY)))
-		return -EOPNOTSUPP;
-
-	hw->sleep_ctrl = 0;
-
-	if (wol->wolopts & WAKE_MAGIC)
-		hw->sleep_ctrl |= ALX_SLEEP_WOL_MAGIC;
-	if (wol->wolopts & WAKE_PHY)
-		hw->sleep_ctrl |= ALX_SLEEP_WOL_PHY;
-
-	device_set_wakeup_enable(&alx->hw.pdev->dev, hw->sleep_ctrl);
-
-	return 0;
-}
-
 const struct ethtool_ops alx_ethtool_ops = {
 	.get_pauseparam	= alx_get_pauseparam,
 	.set_pauseparam	= alx_set_pauseparam,
 	.get_msglevel	= alx_get_msglevel,
 	.set_msglevel	= alx_set_msglevel,
-	.get_wol	= alx_get_wol,
-	.set_wol	= alx_set_wol,
 	.get_link	= ethtool_op_get_link,
 	.get_strings	= alx_get_strings,
 	.get_sset_count	= alx_get_sset_count,

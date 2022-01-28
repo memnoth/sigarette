@@ -99,7 +99,6 @@ printenv:
 	@echo "DEB_BUILD_ARCH            = $(DEB_BUILD_ARCH)"
 	@echo "arch                      = $(arch)"
 	@echo "kmake                     = $(kmake)"
-	@echo "disable_d_i               = $(disable_d_i)"
 
 printchanges:
 	@baseCommit=$$(git log --pretty=format:'%H %s' | \
@@ -113,7 +112,7 @@ printchanges:
 	$(DROOT)/scripts/misc/git-ubuntu-log $(ubuntu_log_opts)
 
 insertchanges: autoreconstruct finalchecks
-	@perl -w -f $(DROOT)/scripts/misc/insert-changes.pl $(DROOT) $(DEBIAN) 
+	$(DROOT)/scripts/misc/insert-changes $(DROOT) $(DEBIAN)
 
 autoreconstruct:
 	# No need for reconstruct for -rc kernels since we don't upload an
@@ -143,8 +142,12 @@ startnewrelease:
 			ver="$${ver%.*}.$$(( $${prev_ver##*.} +1 ))"; \
 		fi; \
 	else \
-		ver="$(release)-$$(echo "$(revision)" | \
-			perl -ne 'if (/^(\d*)\.(\d*)(.*)?$$/) { printf("%d.%d%s\n", $$1 + 1, $$2 +1, $$3) }')"; \
+		rev=$(revision); \
+		suffix=$$(echo "$${rev}" | sed 's/^[0-9]*\.[0-9]*//'); \
+		abi=$${rev%%.*}; \
+		upload=$${rev#*.}; \
+		upload=$${upload%$${suffix}}; \
+		ver=$(release)-$$((abi + 1)).$$((upload + 1))$${suffix}; \
 	fi; \
 	now="$(shell date -R)"; \
 	echo "Creating new changelog set for $$ver..."; \

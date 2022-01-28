@@ -480,10 +480,9 @@ static int vc4_fkms_margins_adj(struct drm_plane_state *pstate,
 }
 
 static void vc4_plane_atomic_update(struct drm_plane *plane,
-				    struct drm_atomic_state *state)
+				    struct drm_atomic_state *old_state)
 {
-	struct drm_plane_state *new_state = drm_atomic_get_new_plane_state(state,
-								           plane);
+	struct drm_plane_state *state = plane->state;
 
 	/*
 	 * Do NOT set now, as we haven't checked if the crtc is active or not.
@@ -492,24 +491,23 @@ static void vc4_plane_atomic_update(struct drm_plane *plane,
 	 * If the CRTC is on (or going to be on) and we're enabled,
 	 * then unblank.  Otherwise, stay blank until CRTC enable.
 	 */
-	if (new_state->crtc->state->active)
+	if (state->crtc->state->active)
 		vc4_plane_set_blank(plane, false);
 }
 
 static void vc4_plane_atomic_disable(struct drm_plane *plane,
-				     struct drm_atomic_state *state)
+				     struct drm_atomic_state *old_state)
 {
-	struct drm_plane_state *new_state = drm_atomic_get_new_plane_state(state,
-									   plane);
+	struct drm_plane_state *state = plane->state;
 	struct vc4_fkms_plane *vc4_plane = to_vc4_fkms_plane(plane);
 
 	DRM_DEBUG_ATOMIC("[PLANE:%d:%s] plane disable %dx%d@%d +%d,%d\n",
 			 plane->base.id, plane->name,
-			 new_state->crtc_w,
-			 new_state->crtc_h,
+			 state->crtc_w,
+			 state->crtc_h,
 			 vc4_plane->mb.plane.vc_image_type,
-			 new_state->crtc_x,
-			 new_state->crtc_y);
+			 state->crtc_x,
+			 state->crtc_y);
 	vc4_plane_set_blank(plane, true);
 }
 
@@ -664,14 +662,14 @@ static int vc4_plane_to_mb(struct drm_plane *plane,
 static int vc4_plane_atomic_check(struct drm_plane *plane,
 				  struct drm_atomic_state *state)
 {
-	struct drm_plane_state *new_state = drm_atomic_get_new_plane_state(state,
-									   plane);
+	struct drm_plane_state *new_plane_state = drm_atomic_get_new_plane_state(state,
+										 plane);
 	struct vc4_fkms_plane *vc4_plane = to_vc4_fkms_plane(plane);
 
-	if (!plane_enabled(new_state))
+	if (!plane_enabled(new_plane_state))
 		return 0;
 
-	return vc4_plane_to_mb(plane, &vc4_plane->mb, new_state);
+	return vc4_plane_to_mb(plane, &vc4_plane->mb, new_plane_state);
 }
 
 /* Called during init to allocate the plane's atomic state. */
@@ -1873,7 +1871,7 @@ static int vc4_fkms_bind(struct device *dev, struct device *master, void *data)
 		fkms->bcm2711 = true;
 
 	firmware_node = of_parse_phandle(dev->of_node, "brcm,firmware", 0);
-	vc4->firmware = rpi_firmware_get(firmware_node);
+	vc4->firmware = devm_rpi_firmware_get(&pdev->dev, firmware_node);
 	if (!vc4->firmware) {
 		DRM_DEBUG("Failed to get Raspberry Pi firmware reference.\n");
 		return -EPROBE_DEFER;

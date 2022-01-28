@@ -77,8 +77,6 @@ struct dp_ctrl_private {
 	struct dp_parser *parser;
 	struct dp_catalog *catalog;
 
-	struct opp_table *opp_table;
-
 	struct completion idle_comp;
 	struct completion video_comp;
 };
@@ -115,7 +113,7 @@ void dp_ctrl_push_idle(struct dp_ctrl *dp_ctrl)
 			IDLE_PATTERN_COMPLETION_TIMEOUT_JIFFIES))
 		pr_warn("PUSH_IDLE pattern timedout\n");
 
-	pr_debug("mainlink off done\n");
+	DRM_DEBUG_DP("mainlink off done\n");
 }
 
 static void dp_ctrl_config_ctrl(struct dp_ctrl_private *ctrl)
@@ -1006,6 +1004,8 @@ static int dp_ctrl_update_vx_px(struct dp_ctrl_private *ctrl)
 	u32 voltage_swing_level = link->phy_params.v_level;
 	u32 pre_emphasis_level = link->phy_params.p_level;
 
+	DRM_DEBUG_DP("voltage level: %d emphasis level: %d\n", voltage_swing_level,
+			pre_emphasis_level);
 	ret = dp_catalog_ctrl_update_vx_px(ctrl->catalog,
 		voltage_swing_level, pre_emphasis_level);
 
@@ -1096,7 +1096,7 @@ static int dp_ctrl_link_train_1(struct dp_ctrl_private *ctrl,
 	tries = 0;
 	old_v_level = ctrl->link->phy_params.v_level;
 	for (tries = 0; tries < maximum_retries; tries++) {
-		drm_dp_link_train_clock_recovery_delay(ctrl->panel->dpcd);
+		drm_dp_link_train_clock_recovery_delay(ctrl->aux, ctrl->panel->dpcd);
 
 		ret = dp_ctrl_read_link_status(ctrl, link_status);
 		if (ret)
@@ -1174,7 +1174,7 @@ static int dp_ctrl_link_lane_down_shift(struct dp_ctrl_private *ctrl)
 static void dp_ctrl_clear_training_pattern(struct dp_ctrl_private *ctrl)
 {
 	dp_ctrl_train_pattern_set(ctrl, DP_TRAINING_PATTERN_DISABLE);
-	drm_dp_link_train_channel_eq_delay(ctrl->panel->dpcd);
+	drm_dp_link_train_channel_eq_delay(ctrl->aux, ctrl->panel->dpcd);
 }
 
 static int dp_ctrl_link_train_2(struct dp_ctrl_private *ctrl,
@@ -1201,7 +1201,7 @@ static int dp_ctrl_link_train_2(struct dp_ctrl_private *ctrl,
 	dp_ctrl_train_pattern_set(ctrl, pattern | DP_RECOVERED_CLOCK_OUT_EN);
 
 	for (tries = 0; tries <= maximum_retries; tries++) {
-		drm_dp_link_train_channel_eq_delay(ctrl->panel->dpcd);
+		drm_dp_link_train_channel_eq_delay(ctrl->aux, ctrl->panel->dpcd);
 
 		ret = dp_ctrl_read_link_status(ctrl, link_status);
 		if (ret)
@@ -1368,6 +1368,7 @@ int dp_ctrl_host_init(struct dp_ctrl *dp_ctrl, bool flip, bool reset)
 	if (reset)
 		dp_catalog_ctrl_reset(ctrl->catalog);
 
+	DRM_DEBUG_DP("flip=%d\n", flip);
 	dp_catalog_ctrl_phy_reset(ctrl->catalog);
 	phy_init(phy);
 	dp_catalog_ctrl_enable_irq(ctrl->catalog, true);
@@ -1861,10 +1862,12 @@ int dp_ctrl_off_link_stream(struct dp_ctrl *dp_ctrl)
 
 	dp_catalog_ctrl_mainlink_ctrl(ctrl->catalog, false);
 
-	ret = dp_power_clk_enable(ctrl->power, DP_STREAM_PM, false);
-	if (ret) {
-		DRM_ERROR("Failed to disable pixel clocks. ret=%d\n", ret);
-		return ret;
+	if (dp_power_clk_status(ctrl->power, DP_STREAM_PM)) {
+		ret = dp_power_clk_enable(ctrl->power, DP_STREAM_PM, false);
+		if (ret) {
+			DRM_ERROR("Failed to disable pclk. ret=%d\n", ret);
+			return ret;
+		}
 	}
 
 	ret = dp_power_clk_enable(ctrl->power, DP_CTRL_PM, false);
@@ -1977,20 +1980,17 @@ struct dp_ctrl *dp_ctrl_get(struct device *dev, struct dp_link *link,
 		return ERR_PTR(-ENOMEM);
 	}
 
-	ctrl->opp_table = dev_pm_opp_set_clkname(dev, "ctrl_link");
-	if (IS_ERR(ctrl->opp_table)) {
+	ret = devm_pm_opp_set_clkname(dev, "ctrl_link");
+	if (ret) {
 		dev_err(dev, "invalid DP OPP table in device tree\n");
-		/* caller do PTR_ERR(ctrl->opp_table) */
-		return (struct dp_ctrl *)ctrl->opp_table;
+		/* caller do PTR_ERR(opp_table) */
+		return (struct dp_ctrl *)ERR_PTR(ret);
 	}
 
 	/* OPP table is optional */
-	ret = dev_pm_opp_of_add_table(dev);
-	if (ret) {
+	ret = devm_pm_opp_of_add_table(dev);
+	if (ret)
 		dev_err(dev, "failed to add DP OPP table\n");
-		dev_pm_opp_put_clkname(ctrl->opp_table);
-		ctrl->opp_table = NULL;
-	}
 
 	init_completion(&ctrl->idle_comp);
 	init_completion(&ctrl->video_comp);
@@ -2005,17 +2005,4 @@ struct dp_ctrl *dp_ctrl_get(struct device *dev, struct dp_link *link,
 	ctrl->dev      = dev;
 
 	return &ctrl->dp_ctrl;
-}
-
-void dp_ctrl_put(struct dp_ctrl *dp_ctrl)
-{
-	struct dp_ctrl_private *ctrl;
-
-	ctrl = container_of(dp_ctrl, struct dp_ctrl_private, dp_ctrl);
-
-	if (ctrl->opp_table) {
-		dev_pm_opp_of_remove_table(ctrl->dev);
-		dev_pm_opp_put_clkname(ctrl->opp_table);
-		ctrl->opp_table = NULL;
-	}
 }

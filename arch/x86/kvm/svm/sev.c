@@ -19,6 +19,7 @@
 #include <linux/trace_events.h>
 #include <asm/fpu/internal.h>
 
+#include <asm/pkru.h>
 #include <asm/trapnr.h>
 
 #include "x86.h"
@@ -26,8 +27,6 @@
 #include "svm_ops.h"
 #include "cpuid.h"
 #include "trace.h"
-
-#define __ex(x) __kvm_handle_fault_on_reboot(x)
 
 #ifndef CONFIG_KVM_AMD_SEV
 /*
@@ -63,6 +62,7 @@ static DEFINE_MUTEX(sev_bitmap_lock);
 unsigned int max_sev_asid;
 static unsigned int min_sev_asid;
 static unsigned long sev_me_mask;
+static unsigned int nr_asids;
 static unsigned long *sev_asid_bitmap;
 static unsigned long *sev_reclaim_asid_bitmap;
 
@@ -77,11 +77,11 @@ struct enc_region {
 /* Called with the sev_bitmap_lock held, or on shutdown  */
 static int sev_flush_asids(int min_asid, int max_asid)
 {
-	int ret, pos, error = 0;
+	int ret, asid, error = 0;
 
 	/* Check if there are any ASIDs to reclaim before performing a flush */
-	pos = find_next_bit(sev_reclaim_asid_bitmap, max_asid, min_asid);
-	if (pos >= max_asid)
+	asid = find_next_bit(sev_reclaim_asid_bitmap, nr_asids, min_asid);
+	if (asid > max_asid)
 		return -EBUSY;
 
 	/*
@@ -114,15 +114,15 @@ static bool __sev_recycle_asids(int min_asid, int max_asid)
 
 	/* The flush process will flush all reclaimable SEV and SEV-ES ASIDs */
 	bitmap_xor(sev_asid_bitmap, sev_asid_bitmap, sev_reclaim_asid_bitmap,
-		   max_sev_asid);
-	bitmap_zero(sev_reclaim_asid_bitmap, max_sev_asid);
+		   nr_asids);
+	bitmap_zero(sev_reclaim_asid_bitmap, nr_asids);
 
 	return true;
 }
 
 static int sev_asid_new(struct kvm_sev_info *sev)
 {
-	int pos, min_asid, max_asid, ret;
+	int asid, min_asid, max_asid, ret;
 	bool retry = true;
 	enum misc_res_type type;
 
@@ -142,11 +142,11 @@ static int sev_asid_new(struct kvm_sev_info *sev)
 	 * SEV-enabled guests must use asid from min_sev_asid to max_sev_asid.
 	 * SEV-ES-enabled guest can use from 1 to min_sev_asid - 1.
 	 */
-	min_asid = sev->es_active ? 0 : min_sev_asid - 1;
+	min_asid = sev->es_active ? 1 : min_sev_asid;
 	max_asid = sev->es_active ? min_sev_asid - 1 : max_sev_asid;
 again:
-	pos = find_next_zero_bit(sev_asid_bitmap, max_sev_asid, min_asid);
-	if (pos >= max_asid) {
+	asid = find_next_zero_bit(sev_asid_bitmap, max_asid + 1, min_asid);
+	if (asid > max_asid) {
 		if (retry && __sev_recycle_asids(min_asid, max_asid)) {
 			retry = false;
 			goto again;
@@ -156,11 +156,11 @@ again:
 		goto e_uncharge;
 	}
 
-	__set_bit(pos, sev_asid_bitmap);
+	__set_bit(asid, sev_asid_bitmap);
 
 	mutex_unlock(&sev_bitmap_lock);
 
-	return pos + 1;
+	return asid;
 e_uncharge:
 	misc_cg_uncharge(type, sev->misc_cg, 1);
 	put_misc_cg(sev->misc_cg);
@@ -178,13 +178,12 @@ static int sev_get_asid(struct kvm *kvm)
 static void sev_asid_free(struct kvm_sev_info *sev)
 {
 	struct svm_cpu_data *sd;
-	int cpu, pos;
+	int cpu;
 	enum misc_res_type type;
 
 	mutex_lock(&sev_bitmap_lock);
 
-	pos = sev->asid - 1;
-	__set_bit(pos, sev_reclaim_asid_bitmap);
+	__set_bit(sev->asid, sev_reclaim_asid_bitmap);
 
 	for_each_possible_cpu(cpu) {
 		sd = per_cpu(svm_data, cpu);
@@ -583,6 +582,7 @@ static int sev_es_sync_vmsa(struct vcpu_svm *svm)
 	save->xcr0 = svm->vcpu.arch.xcr0;
 	save->pkru = svm->vcpu.arch.pkru;
 	save->xss  = svm->vcpu.arch.ia32_xss;
+	save->dr6  = svm->vcpu.arch.dr6;
 
 	/*
 	 * SEV-ES will use a VMSA that is pointed to by the VMCB, not
@@ -1787,7 +1787,12 @@ int svm_vm_copy_asid_from(struct kvm *kvm, unsigned int source_fd)
 	mutex_unlock(&source_kvm->lock);
 	mutex_lock(&kvm->lock);
 
-	if (sev_guest(kvm)) {
+	/*
+	 * Disallow out-of-band SEV/SEV-ES init if the target is already an
+	 * SEV guest, or if vCPUs have been created.  KVM relies on vCPUs being
+	 * created after SEV/SEV-ES initialization, e.g. to init intercepts.
+	 */
+	if (sev_guest(kvm) || kvm->created_vcpus) {
 		ret = -EINVAL;
 		goto e_mirror_unlock;
 	}
@@ -1800,6 +1805,7 @@ int svm_vm_copy_asid_from(struct kvm *kvm, unsigned int source_fd)
 	mirror_sev->fd = source_sev.fd;
 	mirror_sev->es_active = source_sev.es_active;
 	mirror_sev->handle = source_sev.handle;
+	INIT_LIST_HEAD(&mirror_sev->regions_list);
 	/*
 	 * Do not copy ap_jump_table. Since the mirror does not share the same
 	 * KVM contexts as the original, and they may have different
@@ -1900,12 +1906,17 @@ void __init sev_hardware_setup(void)
 	min_sev_asid = edx;
 	sev_me_mask = 1UL << (ebx & 0x3f);
 
-	/* Initialize SEV ASID bitmaps */
-	sev_asid_bitmap = bitmap_zalloc(max_sev_asid, GFP_KERNEL);
+	/*
+	 * Initialize SEV ASID bitmaps. Allocate space for ASID 0 in the bitmap,
+	 * even though it's never used, so that the bitmap is indexed by the
+	 * actual ASID.
+	 */
+	nr_asids = max_sev_asid + 1;
+	sev_asid_bitmap = bitmap_zalloc(nr_asids, GFP_KERNEL);
 	if (!sev_asid_bitmap)
 		goto out;
 
-	sev_reclaim_asid_bitmap = bitmap_zalloc(max_sev_asid, GFP_KERNEL);
+	sev_reclaim_asid_bitmap = bitmap_zalloc(nr_asids, GFP_KERNEL);
 	if (!sev_reclaim_asid_bitmap) {
 		bitmap_free(sev_asid_bitmap);
 		sev_asid_bitmap = NULL;
@@ -1950,7 +1961,7 @@ void sev_hardware_teardown(void)
 		return;
 
 	/* No need to take sev_bitmap_lock, all VMs have been destroyed. */
-	sev_flush_asids(0, max_sev_asid);
+	sev_flush_asids(1, max_sev_asid);
 
 	bitmap_free(sev_asid_bitmap);
 	bitmap_free(sev_reclaim_asid_bitmap);
@@ -1964,7 +1975,7 @@ int sev_cpu_init(struct svm_cpu_data *sd)
 	if (!sev_enabled)
 		return 0;
 
-	sd->sev_vmcbs = kcalloc(max_sev_asid + 1, sizeof(void *), GFP_KERNEL);
+	sd->sev_vmcbs = kcalloc(nr_asids, sizeof(void *), GFP_KERNEL);
 	if (!sd->sev_vmcbs)
 		return -ENOMEM;
 
@@ -2306,7 +2317,7 @@ void pre_sev_run(struct vcpu_svm *svm, int cpu)
 }
 
 #define GHCB_SCRATCH_AREA_LIMIT		(16ULL * PAGE_SIZE)
-static bool setup_vmgexit_scratch(struct vcpu_svm *svm, bool sync, u64 len)
+static int setup_vmgexit_scratch(struct vcpu_svm *svm, bool sync, u64 len)
 {
 	struct vmcb_control_area *control = &svm->vmcb->control;
 	struct ghcb *ghcb = svm->ghcb;
@@ -2317,14 +2328,14 @@ static bool setup_vmgexit_scratch(struct vcpu_svm *svm, bool sync, u64 len)
 	scratch_gpa_beg = ghcb_get_sw_scratch(ghcb);
 	if (!scratch_gpa_beg) {
 		pr_err("vmgexit: scratch gpa not provided\n");
-		return false;
+		return -EINVAL;
 	}
 
 	scratch_gpa_end = scratch_gpa_beg + len;
 	if (scratch_gpa_end < scratch_gpa_beg) {
 		pr_err("vmgexit: scratch length (%#llx) not valid for scratch address (%#llx)\n",
 		       len, scratch_gpa_beg);
-		return false;
+		return -EINVAL;
 	}
 
 	if ((scratch_gpa_beg & PAGE_MASK) == control->ghcb_gpa) {
@@ -2342,7 +2353,7 @@ static bool setup_vmgexit_scratch(struct vcpu_svm *svm, bool sync, u64 len)
 		    scratch_gpa_end > ghcb_scratch_end) {
 			pr_err("vmgexit: scratch area is outside of GHCB shared buffer area (%#llx - %#llx)\n",
 			       scratch_gpa_beg, scratch_gpa_end);
-			return false;
+			return -EINVAL;
 		}
 
 		scratch_va = (void *)svm->ghcb;
@@ -2355,18 +2366,18 @@ static bool setup_vmgexit_scratch(struct vcpu_svm *svm, bool sync, u64 len)
 		if (len > GHCB_SCRATCH_AREA_LIMIT) {
 			pr_err("vmgexit: scratch area exceeds KVM limits (%#llx requested, %#llx limit)\n",
 			       len, GHCB_SCRATCH_AREA_LIMIT);
-			return false;
+			return -EINVAL;
 		}
 		scratch_va = kzalloc(len, GFP_KERNEL_ACCOUNT);
 		if (!scratch_va)
-			return false;
+			return -ENOMEM;
 
 		if (kvm_read_guest(svm->vcpu.kvm, scratch_gpa_beg, scratch_va, len)) {
 			/* Unable to copy scratch area from guest */
 			pr_err("vmgexit: kvm_read_guest for scratch area failed\n");
 
 			kfree(scratch_va);
-			return false;
+			return -EFAULT;
 		}
 
 		/*
@@ -2382,7 +2393,7 @@ static bool setup_vmgexit_scratch(struct vcpu_svm *svm, bool sync, u64 len)
 	svm->ghcb_sa = scratch_va;
 	svm->ghcb_sa_len = len;
 
-	return true;
+	return 0;
 }
 
 static void set_ghcb_msr_bits(struct vcpu_svm *svm, u64 value, u64 mask,
@@ -2521,10 +2532,10 @@ int sev_handle_vmgexit(struct kvm_vcpu *vcpu)
 	ghcb_set_sw_exit_info_1(ghcb, 0);
 	ghcb_set_sw_exit_info_2(ghcb, 0);
 
-	ret = -EINVAL;
 	switch (exit_code) {
 	case SVM_VMGEXIT_MMIO_READ:
-		if (!setup_vmgexit_scratch(svm, true, control->exit_info_2))
+		ret = setup_vmgexit_scratch(svm, true, control->exit_info_2);
+		if (ret)
 			break;
 
 		ret = kvm_sev_es_mmio_read(vcpu,
@@ -2533,7 +2544,8 @@ int sev_handle_vmgexit(struct kvm_vcpu *vcpu)
 					   svm->ghcb_sa);
 		break;
 	case SVM_VMGEXIT_MMIO_WRITE:
-		if (!setup_vmgexit_scratch(svm, false, control->exit_info_2))
+		ret = setup_vmgexit_scratch(svm, false, control->exit_info_2);
+		if (ret)
 			break;
 
 		ret = kvm_sev_es_mmio_write(vcpu,
@@ -2576,6 +2588,7 @@ int sev_handle_vmgexit(struct kvm_vcpu *vcpu)
 		vcpu_unimpl(vcpu,
 			    "vmgexit: unsupported event - exit_info_1=%#llx, exit_info_2=%#llx\n",
 			    control->exit_info_1, control->exit_info_2);
+		ret = -EINVAL;
 		break;
 	default:
 		ret = svm_invoke_exit_handler(vcpu, exit_code);
@@ -2586,11 +2599,22 @@ int sev_handle_vmgexit(struct kvm_vcpu *vcpu)
 
 int sev_es_string_io(struct vcpu_svm *svm, int size, unsigned int port, int in)
 {
-	if (!setup_vmgexit_scratch(svm, in, svm->vmcb->control.exit_info_2))
+	int count;
+	int bytes;
+	int r;
+
+	if (svm->vmcb->control.exit_info_2 > INT_MAX)
 		return -EINVAL;
 
-	return kvm_sev_es_string_io(&svm->vcpu, size, port,
-				    svm->ghcb_sa, svm->ghcb_sa_len / size, in);
+	count = svm->vmcb->control.exit_info_2;
+	if (unlikely(check_mul_overflow(count, size, &bytes)))
+		return -EINVAL;
+
+	r = setup_vmgexit_scratch(svm, in, bytes);
+	if (r)
+		return r;
+
+	return kvm_sev_es_string_io(&svm->vcpu, size, port, svm->ghcb_sa, count, in);
 }
 
 void sev_es_init_vmcb(struct vcpu_svm *svm)

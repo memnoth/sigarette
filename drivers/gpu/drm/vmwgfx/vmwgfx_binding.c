@@ -786,7 +786,7 @@ static void vmw_collect_dirty_view_ids(struct vmw_ctx_binding_state *cbs,
 }
 
 /**
- * vmw_binding_emit_set_sr - Issue delayed DX shader resource binding commands
+ * vmw_emit_set_sr - Issue delayed DX shader resource binding commands
  *
  * @cbs: Pointer to the context's struct vmw_ctx_binding_state
  * @shader_slot: The shader slot of the binding.
@@ -830,7 +830,7 @@ static int vmw_emit_set_sr(struct vmw_ctx_binding_state *cbs,
 }
 
 /**
- * vmw_binding_emit_set_rt - Issue delayed DX rendertarget binding commands
+ * vmw_emit_set_rt - Issue delayed DX rendertarget binding commands
  *
  * @cbs: Pointer to the context's struct vmw_ctx_binding_state
  */
@@ -844,7 +844,7 @@ static int vmw_emit_set_rt(struct vmw_ctx_binding_state *cbs)
 	size_t cmd_size, view_id_size;
 	const struct vmw_resource *ctx = vmw_cbs_context(cbs);
 
-	vmw_collect_view_ids(cbs, loc, SVGA3D_MAX_SIMULTANEOUS_RENDER_TARGETS);
+	vmw_collect_view_ids(cbs, loc, SVGA3D_DX_MAX_RENDER_TARGETS);
 	view_id_size = cbs->bind_cmd_count*sizeof(uint32);
 	cmd_size = sizeof(*cmd) + view_id_size;
 	cmd = VMW_CMD_CTX_RESERVE(ctx->dev_priv, cmd_size, ctx->id);
@@ -1020,7 +1020,7 @@ static void vmw_collect_dirty_vbs(struct vmw_ctx_binding_state *cbs,
 }
 
 /**
- * vmw_binding_emit_set_vb - Issue delayed vertex buffer binding commands
+ * vmw_emit_set_vb - Issue delayed vertex buffer binding commands
  *
  * @cbs: Pointer to the context's struct vmw_ctx_binding_state
  *
@@ -1390,7 +1390,7 @@ struct list_head *vmw_binding_state_list(struct vmw_ctx_binding_state *cbs)
 }
 
 /**
- * vmwgfx_binding_state_reset - clear a struct vmw_ctx_binding_state
+ * vmw_binding_state_reset - clear a struct vmw_ctx_binding_state
  *
  * @cbs: Pointer to the struct vmw_ctx_binding_state to be cleared
  *
@@ -1440,7 +1440,7 @@ u32 vmw_binding_dirtying(enum vmw_ctx_binding_type binding_type)
 static void vmw_binding_build_asserts(void)
 {
 	BUILD_BUG_ON(SVGA3D_NUM_SHADERTYPE_DX10 != 3);
-	BUILD_BUG_ON(SVGA3D_MAX_SIMULTANEOUS_RENDER_TARGETS > SVGA3D_RT_MAX);
+	BUILD_BUG_ON(SVGA3D_DX_MAX_RENDER_TARGETS > SVGA3D_RT_MAX);
 	BUILD_BUG_ON(sizeof(uint32) != sizeof(u32));
 
 	/*

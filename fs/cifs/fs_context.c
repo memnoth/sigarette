@@ -13,6 +13,9 @@
 #include <linux/magic.h>
 #include <linux/security.h>
 #include <net/net_namespace.h>
+#ifdef CONFIG_CIFS_DFS_UPCALL
+#include "dfs_cache.h"
+#endif
 */
 
 #include <linux/ctype.h>
@@ -54,12 +57,9 @@ static const match_table_t cifs_secflavor_tokens = {
 	{ Opt_sec_krb5p, "krb5p" },
 	{ Opt_sec_ntlmsspi, "ntlmsspi" },
 	{ Opt_sec_ntlmssp, "ntlmssp" },
-	{ Opt_ntlm, "ntlm" },
-	{ Opt_sec_ntlmi, "ntlmi" },
 	{ Opt_sec_ntlmv2, "nontlm" },
 	{ Opt_sec_ntlmv2, "ntlmv2" },
 	{ Opt_sec_ntlmv2i, "ntlmv2i" },
-	{ Opt_sec_lanman, "lanman" },
 	{ Opt_sec_none, "none" },
 
 	{ Opt_sec_err, NULL }
@@ -218,23 +218,12 @@ cifs_parse_security_flavors(struct fs_context *fc, char *value, struct smb3_fs_c
 	case Opt_sec_ntlmssp:
 		ctx->sectype = RawNTLMSSP;
 		break;
-	case Opt_sec_ntlmi:
-		ctx->sign = true;
-		fallthrough;
-	case Opt_ntlm:
-		ctx->sectype = NTLM;
-		break;
 	case Opt_sec_ntlmv2i:
 		ctx->sign = true;
 		fallthrough;
 	case Opt_sec_ntlmv2:
 		ctx->sectype = NTLMv2;
 		break;
-#ifdef CONFIG_CIFS_WEAK_PW_HASH
-	case Opt_sec_lanman:
-		ctx->sectype = LANMAN;
-		break;
-#endif
 	case Opt_sec_none:
 		ctx->nullauth = 1;
 		break;
@@ -318,6 +307,7 @@ smb3_fs_context_dup(struct smb3_fs_context *new_ctx, struct smb3_fs_context *ctx
 	new_ctx->nodename = NULL;
 	new_ctx->username = NULL;
 	new_ctx->password = NULL;
+	new_ctx->server_hostname = NULL;
 	new_ctx->domainname = NULL;
 	new_ctx->UNC = NULL;
 	new_ctx->source = NULL;
@@ -329,6 +319,7 @@ smb3_fs_context_dup(struct smb3_fs_context *new_ctx, struct smb3_fs_context *ctx
 	DUP_CTX_STR(mount_options);
 	DUP_CTX_STR(username);
 	DUP_CTX_STR(password);
+	DUP_CTX_STR(server_hostname);
 	DUP_CTX_STR(UNC);
 	DUP_CTX_STR(source);
 	DUP_CTX_STR(domainname);
@@ -441,6 +432,42 @@ out:
 }
 
 /*
+ * Remove duplicate path delimiters. Windows is supposed to do that
+ * but there are some bugs that prevent rename from working if there are
+ * multiple delimiters.
+ *
+ * Returns a sanitized duplicate of @path. The caller is responsible for
+ * cleaning up the original.
+ */
+#define IS_DELIM(c) ((c) == '/' || (c) == '\\')
+static char *sanitize_path(char *path)
+{
+	char *cursor1 = path, *cursor2 = path;
+
+	/* skip all prepended delimiters */
+	while (IS_DELIM(*cursor1))
+		cursor1++;
+
+	/* copy the first letter */
+	*cursor2 = *cursor1;
+
+	/* copy the remainder... */
+	while (*(cursor1++)) {
+		/* ... skipping all duplicated delimiters */
+		if (IS_DELIM(*cursor1) && IS_DELIM(*cursor2))
+			continue;
+		*(++cursor2) = *cursor1;
+	}
+
+	/* if the last character is a delimiter, skip it */
+	if (IS_DELIM(*(cursor2 - 1)))
+		cursor2--;
+
+	*(cursor2) = '\0';
+	return kstrdup(path, GFP_KERNEL);
+}
+
+/*
  * Parse a devname into substrings and populate the ctx->UNC and ctx->prepath
  * fields with the result. Returns 0 on success and an error otherwise
  * (e.g. ENOMEM or EINVAL)
@@ -466,6 +493,12 @@ smb3_parse_devname(const char *devname, struct smb3_fs_context *ctx)
 	pos = strpbrk(devname + 2, delims);
 	if (!pos)
 		return -EINVAL;
+
+	/* record the server hostname */
+	kfree(ctx->server_hostname);
+	ctx->server_hostname = kstrndup(devname + 2, pos - devname - 2, GFP_KERNEL);
+	if (!ctx->server_hostname)
+		return -ENOMEM;
 
 	/* skip past delimiter */
 	++pos;
@@ -493,7 +526,7 @@ smb3_parse_devname(const char *devname, struct smb3_fs_context *ctx)
 	if (!*pos)
 		return 0;
 
-	ctx->prepath = kstrdup(pos, GFP_KERNEL);
+	ctx->prepath = sanitize_path(pos);
 	if (!ctx->prepath)
 		return -ENOMEM;
 
@@ -779,6 +812,10 @@ static int smb3_reconfigure(struct fs_context *fc)
 	smb3_cleanup_fs_context_contents(cifs_sb->ctx);
 	rc = smb3_fs_context_dup(cifs_sb->ctx, ctx);
 	smb3_update_mnt_flags(cifs_sb);
+#ifdef CONFIG_CIFS_DFS_UPCALL
+	if (!rc)
+		rc = dfs_cache_remount_fs(cifs_sb);
+#endif
 
 	return rc;
 }
@@ -1503,6 +1540,8 @@ smb3_cleanup_fs_context_contents(struct smb3_fs_context *ctx)
 	ctx->username = NULL;
 	kfree_sensitive(ctx->password);
 	ctx->password = NULL;
+	kfree(ctx->server_hostname);
+	ctx->server_hostname = NULL;
 	kfree(ctx->UNC);
 	ctx->UNC = NULL;
 	kfree(ctx->source);

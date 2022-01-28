@@ -30,6 +30,7 @@
 #include <linux/platform_device.h>
 #include <linux/pm_runtime.h>
 
+#include <drm/drm_aperture.h>
 #include <drm/drm_atomic_helper.h>
 #include <drm/drm_drv.h>
 #include <drm/drm_fb_cma_helper.h>
@@ -58,10 +59,8 @@ void __iomem *vc4_ioremap_regs(struct platform_device *dev, int index)
 
 	res = platform_get_resource(dev, IORESOURCE_MEM, index);
 	map = devm_ioremap_resource(&dev->dev, res);
-	if (IS_ERR(map)) {
-		DRM_ERROR("Failed to map registers: %ld\n", PTR_ERR(map));
+	if (IS_ERR(map))
 		return map;
-	}
 
 	return map;
 }
@@ -171,10 +170,6 @@ static struct drm_driver vc4_drm_driver = {
 			    DRIVER_SYNCOBJ),
 	.open = vc4_open,
 	.postclose = vc4_close,
-	.irq_handler = vc4_irq,
-	.irq_preinstall = vc4_irq_preinstall,
-	.irq_postinstall = vc4_irq_postinstall,
-	.irq_uninstall = vc4_irq_uninstall,
 
 #if defined(CONFIG_DEBUG_FS)
 	.debugfs_init = vc4_debugfs_init,
@@ -246,6 +241,7 @@ static bool firmware_kms(void)
 static int vc4_drm_bind(struct device *dev)
 {
 	struct platform_device *pdev = to_platform_device(dev);
+	struct rpi_firmware *firmware = NULL;
 	struct drm_device *drm;
 	struct vc4_dev *vc4;
 	struct device_node *node;
@@ -292,23 +288,27 @@ static int vc4_drm_bind(struct device *dev)
 	if (ret)
 		return ret;
 
-	node = of_parse_phandle(dev->of_node, "raspberrypi,firmware", 0);
+	node = of_find_compatible_node(NULL, NULL, "raspberrypi,bcm2835-firmware");
 	if (node) {
-		vc4->firmware = rpi_firmware_get(node);
+		firmware = rpi_firmware_get(node);
 		of_node_put(node);
 
-		if (!vc4->firmware)
+		if (!firmware)
 			return -EPROBE_DEFER;
 	}
 
-	drm_fb_helper_remove_conflicting_framebuffers(NULL, "vc4drmfb", false);
+	ret = drm_aperture_remove_framebuffers(false, &vc4_drm_driver);
+	if (ret)
+		return ret;
 
-	if (vc4->firmware && !firmware_kms()) {
-		ret = rpi_firmware_property(vc4->firmware,
+	if (firmware && !firmware_kms()) {
+		ret = rpi_firmware_property(firmware,
 					    RPI_FIRMWARE_NOTIFY_DISPLAY_DONE,
 					    NULL, 0);
 		if (ret)
 			drm_warn(drm, "Couldn't stop firmware display driver: %d\n", ret);
+
+		rpi_firmware_put(firmware);
 	}
 
 	ret = component_bind_all(dev, drm);

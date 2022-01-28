@@ -118,7 +118,8 @@ $(stampdir)/stamp-install-%: MODPUBKEY=$(builddir)/build-$*/certs/signing_key.x5
 $(stampdir)/stamp-install-%: build_dir=$(builddir)/build-$*
 $(stampdir)/stamp-install-%: dkms_dir=$(call dkms_dir_prefix,$(builddir)/build-$*)
 $(stampdir)/stamp-install-%: enable_zfs = $(call custom_override,do_zfs,$*)
-$(stampdir)/stamp-install-%: dbgpkgdir_zfs = $(if $(filter true,$(skipdbg)),"",$(dbgpkgdir)/usr/lib/debug/lib/modules/$(abi_release)-$*/kernel)
+$(stampdir)/stamp-install-%: enable_v4l2loopback = $(call custom_override,do_v4l2loopback,$*)
+$(stampdir)/stamp-install-%: dbgpkgdir_dkms = $(if $(filter true,$(skipdbg)),"",$(dbgpkgdir)/usr/lib/debug/lib/modules/$(abi_release)-$*/kernel)
 $(stampdir)/stamp-install-%: $(stampdir)/stamp-build-% $(stampdir)/stamp-install-headers
 	@echo Debug: $@ kernel_file $(kernel_file) kernfile $(kernfile) install_file $(install_file) instfile $(instfile)
 	dh_testdir
@@ -176,12 +177,6 @@ endif
 ifeq ($(do_dtbs),true)
 	$(build_cd) $(kmake) $(build_O) $(conc_level) dtbs_install \
 		INSTALL_DTBS_PATH=$(pkgdir)/lib/firmware/$(abi_release)-$*/device-tree
-ifeq ($(disable_d_i),)
-	( cd $(pkgdir)/lib/firmware/$(abi_release)-$*/ && find device-tree -print ) | \
-	while read dtb_file; do \
-		echo "$$dtb_file ?" >> $(DEBIAN)/d-i/firmware/$(arch)/kernel-image; \
-	done
-endif
 endif
 
 ifeq ($(no_dumpfile),)
@@ -417,7 +412,9 @@ endif
 	install -d $(dkms_dir) $(dkms_dir)/headers $(dkms_dir)/build $(dkms_dir)/source
 	cp -rp "$(hdrdir)" "$(indep_hdrdir)" "$(dkms_dir)/headers"
 
-	$(if $(filter true,$(enable_zfs)),$(call build_dkms, $(mods_pkg_name)-$*, $(pkgdir)/lib/modules/$(abi_release)-$*/kernel, $(dbgpkgdir_zfs), zfs, pool/universe/z/zfs-linux/zfs-dkms_$(dkms_zfs_linux_version)_all.deb))
+	$(if $(filter true,$(enable_zfs)),$(call build_dkms, $(mods_pkg_name)-$*, $(pkgdir)/lib/modules/$(abi_release)-$*/kernel, $(dbgpkgdir_dkms), zfs, pool/universe/z/zfs-linux/zfs-dkms_$(dkms_zfs_linux_version)_all.deb))
+	$(if $(filter true,$(enable_v4l2loopback)),$(call build_dkms, $(mods_pkg_name)-$*, $(pkgdir)/lib/modules/$(abi_release)-$*/kernel, $(dbgpkgdir_dkms), v4l2loopback, pool/universe/v/v4l2loopback/v4l2loopback-dkms_$(dkms_v4l2loopback_version)_all.deb))
+
 
 ifneq ($(skipdbg),true)
 	# Add .gnu_debuglink sections to each stripped .ko
@@ -454,6 +451,12 @@ endif
 	# Build the final ABI modules information.
 	find $(pkgdir_bin) $(pkgdir) $(pkgdir_ex) -name \*.ko | \
 		sed -e 's/.*\/\([^\/]*\)\.ko/\1/' | sort > $(abidir)/$*.modules
+
+	# Build the final ABI built-in modules information.
+	if [ -f $(pkgdir)/lib/modules/$(abi_release)-$*/modules.builtin ] ; then \
+		sed -e 's/.*\/\([^\/]*\)\.ko/\1/' $(pkgdir)/lib/modules/$(abi_release)-$*/modules.builtin | \
+			sort > $(abidir)/$*.modules.builtin; \
+	fi
 
 	# Build the final ABI firmware information.
 	find $(pkgdir_bin) $(pkgdir) $(pkgdir_ex) -name \*.ko | \
@@ -495,6 +498,10 @@ endif
 		$(pkgdir_bldinfo)/usr/lib/linux/$(abi_release)-$*/retpoline
 	install -m644 $(abidir)/$*.compiler \
 		$(pkgdir_bldinfo)/usr/lib/linux/$(abi_release)-$*/compiler
+	if [ -f $(abidir)/$*.modules.builtin ] ; then \
+		install -m644 $(abidir)/$*.modules.builtin \
+			$(pkgdir_bldinfo)/usr/lib/linux/$(abi_release)-$*/modules.builtin; \
+	fi
 
 ifneq ($(full_build),false)
 	# Clean out this flavours build directory.
@@ -547,7 +554,7 @@ define dh_all
 	dh_installdebconf -p$(1)
 	$(lockme) dh_gencontrol -p$(1) -- -Vlinux:rprovides='$(rprovides)'
 	dh_md5sums -p$(1)
-	dh_builddeb -p$(1)
+	dh_builddeb -p$(1) -- -Zxz
 endef
 define newline
 
@@ -579,7 +586,8 @@ binary-%: dbgpkg = $(bin_pkg_name)-$*-dbgsym
 binary-%: dbgpkgdir = $(CURDIR)/debian/$(bin_pkg_name)-$*-dbgsym
 binary-%: pkgtools = $(tools_flavour_pkg_name)-$*
 binary-%: pkgcloud = $(cloud_flavour_pkg_name)-$*
-binary-%: rprovides = $(if $(filter true,$(call custom_override,do_zfs,$*)),spl-modules$(comma) spl-dkms$(comma) zfs-modules$(comma) zfs-dkms$(comma))
+binary-%: rprovides = $(if $(filter true,$(call custom_override,do_zfs,$*)),spl-modules$(comma) spl-dkms$(comma) zfs-modules$(comma) zfs-dkms$(comma)) \
+		$(if $(filter true,$(call custom_override,do_v4l2loopback,$*)),v4l2loopback-modules$(comma) v4l2loopback-dkms$(comma))
 binary-%: target_flavour = $*
 binary-%: checks-%
 	@echo Debug: $@
@@ -798,7 +806,7 @@ build-arch: $(build-arch-deps-true)
 	@echo Debug: $@
 
 ifeq ($(AUTOBUILD),)
-binary-arch-deps-$(do_flavour_image_package) += binary-udebs
+binary-arch-deps-$(do_flavour_image_package) += binary-debs
 else
 binary-arch-deps-$(do_flavour_image_package) = binary-debs
 endif

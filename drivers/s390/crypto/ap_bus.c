@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright IBM Corp. 2006, 2020
+ * Copyright IBM Corp. 2006, 2021
  * Author(s): Cornelia Huck <cornelia.huck@de.ibm.com>
  *	      Martin Schwidefsky <schwidefsky@de.ibm.com>
  *	      Ralph Wuerthner <rwuerthn@de.ibm.com>
@@ -79,6 +79,9 @@ EXPORT_SYMBOL(ap_perms_mutex);
 
 /* # of bus scans since init */
 static atomic64_t ap_scan_bus_count;
+
+/* # of bindings complete since init */
+static atomic64_t ap_bindings_complete_count = ATOMIC64_INIT(0);
 
 /* completion for initial APQN bindings complete */
 static DECLARE_COMPLETION(ap_init_apqn_bindings_complete);
@@ -210,7 +213,6 @@ static inline int ap_fetch_qci_info(struct ap_config_info *info)
  * ap_init_qci_info(): Allocate and query qci config info.
  * Does also update the static variables ap_max_domain_id
  * and ap_max_adapter_id if this info is available.
-
  */
 static void __init ap_init_qci_info(void)
 {
@@ -436,6 +438,7 @@ static enum hrtimer_restart ap_poll_timeout(struct hrtimer *unused)
 /**
  * ap_interrupt_handler() - Schedule ap_tasklet on interrupt
  * @airq: pointer to adapter interrupt descriptor
+ * @floating: ignored
  */
 static void ap_interrupt_handler(struct airq_struct *airq, bool floating)
 {
@@ -646,8 +649,11 @@ static void ap_send_init_scan_done_uevent(void)
 
 static void ap_send_bindings_complete_uevent(void)
 {
-	char *envp[] = { "BINDINGS=complete", NULL };
+	char buf[32];
+	char *envp[] = { "BINDINGS=complete", buf, NULL };
 
+	snprintf(buf, sizeof(buf), "COMPLETECOUNT=%llu",
+		 atomic64_inc_return(&ap_bindings_complete_count));
 	kobject_uevent_env(&ap_root_device->kobj, KOBJ_CHANGE, envp);
 }
 
@@ -688,7 +694,7 @@ static int __ap_calc_helper(struct device *dev, void *arg)
 
 	if (is_queue_dev(dev)) {
 		pctrs->apqns++;
-		if ((to_ap_dev(dev))->drv)
+		if (dev->driver)
 			pctrs->bound++;
 	}
 
@@ -868,7 +874,6 @@ static int ap_device_probe(struct device *dev)
 			 to_ap_queue(dev)->qid);
 	spin_unlock_bh(&ap_queues_lock);
 
-	ap_dev->drv = ap_drv;
 	rc = ap_drv->probe ? ap_drv->probe(ap_dev) : -ENODEV;
 
 	if (rc) {
@@ -876,7 +881,6 @@ static int ap_device_probe(struct device *dev)
 		if (is_queue_dev(dev))
 			hash_del(&to_ap_queue(dev)->hnode);
 		spin_unlock_bh(&ap_queues_lock);
-		ap_dev->drv = NULL;
 	} else
 		ap_check_bindings_complete();
 
@@ -886,10 +890,10 @@ out:
 	return rc;
 }
 
-static int ap_device_remove(struct device *dev)
+static void ap_device_remove(struct device *dev)
 {
 	struct ap_device *ap_dev = to_ap_dev(dev);
-	struct ap_driver *ap_drv = ap_dev->drv;
+	struct ap_driver *ap_drv = to_ap_drv(dev->driver);
 
 	/* prepare ap queue device removal */
 	if (is_queue_dev(dev))
@@ -908,11 +912,8 @@ static int ap_device_remove(struct device *dev)
 	if (is_queue_dev(dev))
 		hash_del(&to_ap_queue(dev)->hnode);
 	spin_unlock_bh(&ap_queues_lock);
-	ap_dev->drv = NULL;
 
 	put_device(dev);
-
-	return 0;
 }
 
 struct ap_queue *ap_get_qdev(ap_qid_t qid)
@@ -940,8 +941,6 @@ int ap_driver_register(struct ap_driver *ap_drv, struct module *owner,
 	struct device_driver *drv = &ap_drv->driver;
 
 	drv->bus = &ap_bus_type;
-	drv->probe = ap_device_probe;
-	drv->remove = ap_device_remove;
 	drv->owner = owner;
 	drv->name = name;
 	return driver_register(drv);
@@ -1374,6 +1373,8 @@ static struct bus_type ap_bus_type = {
 	.bus_groups = ap_bus_groups,
 	.match = &ap_bus_match,
 	.uevent = &ap_uevent,
+	.probe = ap_device_probe,
+	.remove = ap_device_remove,
 };
 
 /**
@@ -1785,6 +1786,7 @@ static inline void ap_scan_adapter(int ap)
 /**
  * ap_scan_bus(): Scan the AP bus for new devices
  * Runs periodically, workqueue timer (ap_config_time)
+ * @unused: Unused pointer.
  */
 static void ap_scan_bus(struct work_struct *unused)
 {

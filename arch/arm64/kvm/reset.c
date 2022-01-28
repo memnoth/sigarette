@@ -176,6 +176,10 @@ static bool vcpu_allowed_register_width(struct kvm_vcpu *vcpu)
 	if (!cpus_have_const_cap(ARM64_HAS_32BIT_EL1) && is32bit)
 		return false;
 
+	/* MTE is incompatible with AArch32 */
+	if (kvm_has_mte(vcpu->kvm) && is32bit)
+		return false;
+
 	/* Check that the vcpus are either all 32bit or all 64bit */
 	kvm_for_each_vcpu(i, tmp, vcpu->kvm) {
 		if (vcpu_has_feature(tmp, KVM_ARM_VCPU_EL1_32BIT) != is32bit)
@@ -311,7 +315,7 @@ u32 get_kvm_ipa_limit(void)
 
 int kvm_set_ipa_limit(void)
 {
-	unsigned int parange, tgran_2;
+	unsigned int parange;
 	u64 mmfr0;
 
 	mmfr0 = read_sanitised_ftr_reg(SYS_ID_AA64MMFR0_EL1);
@@ -330,20 +334,7 @@ int kvm_set_ipa_limit(void)
 	 * Check with ARMv8.5-GTG that our PAGE_SIZE is supported at
 	 * Stage-2. If not, things will stop very quickly.
 	 */
-	switch (PAGE_SIZE) {
-	default:
-	case SZ_4K:
-		tgran_2 = ID_AA64MMFR0_TGRAN4_2_SHIFT;
-		break;
-	case SZ_16K:
-		tgran_2 = ID_AA64MMFR0_TGRAN16_2_SHIFT;
-		break;
-	case SZ_64K:
-		tgran_2 = ID_AA64MMFR0_TGRAN64_2_SHIFT;
-		break;
-	}
-
-	switch (cpuid_feature_extract_unsigned_field(mmfr0, tgran_2)) {
+	switch (cpuid_feature_extract_unsigned_field(mmfr0, ID_AA64MMFR0_TGRAN_2_SHIFT)) {
 	case ID_AA64MMFR0_TGRAN_2_SUPPORTED_NONE:
 		kvm_err("PAGE_SIZE not supported at Stage-2, giving up\n");
 		return -EINVAL;
@@ -377,7 +368,7 @@ int kvm_arm_setup_stage2(struct kvm *kvm, unsigned long type)
 	phys_shift = KVM_VM_TYPE_ARM_IPA_SIZE(type);
 	if (phys_shift) {
 		if (phys_shift > kvm_ipa_limit ||
-		    phys_shift < 32)
+		    phys_shift < ARM64_MIN_PARANGE_BITS)
 			return -EINVAL;
 	} else {
 		phys_shift = KVM_PHYS_SHIFT;
