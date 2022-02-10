@@ -370,7 +370,13 @@ union dmub_fw_boot_options {
 		uint32_t z10_disable: 1; /**< 1 to disable z10 */
 		uint32_t enable_dpia: 1; /**< 1 if DPIA should be enabled */
 		uint32_t invalid_vbios_data: 1; /**< 1 if VBIOS data table is invalid */
-		uint32_t reserved : 23; /**< reserved */
+		uint32_t dpia_supported: 1; /**< 1 if DPIA is supported on this platform */
+		uint32_t sel_mux_phy_c_d_phy_f_g: 1; /**< 1 if PHYF/PHYG should be enabled */
+		/**< 1 if all root clock gating is enabled and low power memory is enabled*/
+		uint32_t power_optimization: 1;
+		uint32_t diag_env: 1; /* 1 if diagnostic environment */
+
+		uint32_t reserved : 19; /**< reserved */
 	} bits; /**< boot bits */
 	uint32_t all; /**< 32-bit access to bits */
 };
@@ -691,6 +697,7 @@ enum dmub_out_cmd_type {
 enum dmub_cmd_dpia_type {
 	DMUB_CMD__DPIA_DIG1_DPIA_CONTROL = 0,
 	DMUB_CMD__DPIA_SET_CONFIG_ACCESS = 1,
+	DMUB_CMD__DPIA_MST_ALLOC_SLOTS = 2,
 };
 
 #pragma pack(push, 1)
@@ -1063,6 +1070,24 @@ struct dmub_cmd_set_config_control_data {
 struct dmub_rb_cmd_set_config_access {
 	struct dmub_cmd_header header; /* header */
 	struct dmub_cmd_set_config_control_data set_config_control; /* set config data */
+};
+
+/**
+ * Data passed from driver to FW in a DMUB_CMD__DPIA_MST_ALLOC_SLOTS command.
+ */
+struct dmub_cmd_mst_alloc_slots_control_data {
+	uint8_t mst_alloc_slots; /* mst slots to be allotted */
+	uint8_t instance; /* DPIA instance */
+	uint8_t immed_status; /* Immediate status returned as there is no outbox msg posted */
+	uint8_t mst_slots_in_use; /* returns slots in use for error cases */
+};
+
+/**
+ * DMUB command structure for SET_ command.
+ */
+struct dmub_rb_cmd_set_mst_alloc_slots {
+	struct dmub_cmd_header header; /* header */
+	struct dmub_cmd_mst_alloc_slots_control_data mst_slots_control; /* mst slots control */
 };
 
 /**
@@ -2487,6 +2512,10 @@ union dmub_rb_cmd {
 	 * Definition of a DMUB_CMD__DPIA_SET_CONFIG_ACCESS command.
 	 */
 	struct dmub_rb_cmd_set_config_access set_config_access;
+	/**
+	 * Definition of a DMUB_CMD__DPIA_MST_ALLOC_SLOTS command.
+	 */
+	struct dmub_rb_cmd_set_mst_alloc_slots set_mst_alloc_slots;
 	/**
 	 * Definition of a DMUB_CMD__EDID_CEA command.
 	 */
