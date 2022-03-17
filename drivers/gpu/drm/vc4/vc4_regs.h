@@ -234,6 +234,7 @@
 # define SCALER_DISPCTRL_DSPEIEOLN(x)		BIT(8 + ((x) * 2))
 /* Enables Display 0 EOF contribution to SCALER_DISPSTAT_IRQDISP0 */
 # define SCALER_DISPCTRL_DSPEIEOF(x)		BIT(7 + ((x) * 2))
+# define SCALER5_DISPCTRL_DSPEIEOF(x)		BIT(7 + ((x) * 4))
 
 # define SCALER_DISPCTRL_SLVRDEIRQ		BIT(6)
 # define SCALER_DISPCTRL_SLVWREIRQ		BIT(5)
@@ -245,23 +246,6 @@
 /* Enables interrupt generation on scaler profiler interrupt. */
 # define SCALER_DISPCTRL_SCLEIRQ		BIT(0)
 
-/* Enables Display 0 short line and underrun contribution to
- * SCALER_DISPSTAT_IRQDISP0.  Note that short frame contributions are
- * always enabled.
- */
-# define SCALER5_DISPCTRL_DSPEISLUR(x)		BIT(9 + ((x) * 4))
-/* Enables Display 0 end-of-line-N contribution to
- * SCALER_DISPSTAT_IRQDISP0
- */
-# define SCALER5_DISPCTRL_DSPEIEOLN(x)		BIT(8 + ((x) * 4))
-/* Enables Display 0 EOF contribution to SCALER_DISPSTAT_IRQDISP0 */
-# define SCALER5_DISPCTRL_DSPEIEOF(x)		BIT(7 + ((x) * 4))
-/* Enables Display 0 VSTART contribution to SCALER_DISPSTAT_IRQDISP0 */
-# define SCALER5_DISPCTRL_DSPVSTART(x)		BIT(6 + ((x) * 4))
-
-# define SCALER5_DISPCTRL_SLVEIRQ		BIT(5)
-# define SCALER5_DISPCTRL_DMAEIRQ		BIT(4)
-
 #define SCALER_DISPSTAT                         0x00000004
 # define SCALER_DISPSTAT_RESP_MASK		VC4_MASK(15, 14)
 # define SCALER_DISPSTAT_RESP_SHIFT		14
@@ -269,8 +253,6 @@
 # define SCALER_DISPSTAT_RESP_EXOKAY		1
 # define SCALER_DISPSTAT_RESP_SLVERR		2
 # define SCALER_DISPSTAT_RESP_DECERR		3
-
-# define SCALER5_DISPSTAT_VSTART(x)		BIT(14 + ((x) * 8))
 
 # define SCALER_DISPSTAT_COBLOW(x)		BIT(13 + ((x) * 8))
 /* Set when the DISPEOLN line is done compositing. */
@@ -293,8 +275,6 @@
 # define SCALER_DISPSTAT_IRQMASK(x)		VC4_MASK(13 + ((x) * 8), \
 							 8 + ((x) * 8))
 
-# define SCALER5_DISPSTAT_IRQMASK(x)		VC4_MASK(14 + ((x) * 8), \
-							 8 + ((x) * 8))
 /* Set on AXI invalid DMA ID error. */
 # define SCALER_DISPSTAT_DMA_ERROR		BIT(7)
 /* Set on AXI slave read decode error */
@@ -400,8 +380,6 @@
 # define SCALER_DISPSTATX_MODE_EOF		3
 # define SCALER_DISPSTATX_FULL			BIT(29)
 # define SCALER_DISPSTATX_EMPTY			BIT(28)
-# define SCALER_DISPSTATX_FRAME_COUNT_MASK	VC4_MASK(17, 12)
-# define SCALER_DISPSTATX_FRAME_COUNT_SHIFT	12
 # define SCALER_DISPSTATX_LINE_MASK		VC4_MASK(11, 0)
 # define SCALER_DISPSTATX_LINE_SHIFT		0
 
@@ -424,9 +402,15 @@
 						 (x) * (SCALER_DISPBKGND1 - \
 							SCALER_DISPBKGND0))
 #define SCALER_DISPSTAT1                        0x00000058
+# define SCALER_DISPSTAT1_FRCNT0_MASK		VC4_MASK(23, 18)
+# define SCALER_DISPSTAT1_FRCNT0_SHIFT		18
+# define SCALER_DISPSTAT1_FRCNT1_MASK		VC4_MASK(17, 12)
+# define SCALER_DISPSTAT1_FRCNT1_SHIFT		12
+
 #define SCALER_DISPSTATX(x)			(SCALER_DISPSTAT0 +        \
 						 (x) * (SCALER_DISPSTAT1 - \
 							SCALER_DISPSTAT0))
+
 #define SCALER_DISPBASE1                        0x0000005c
 #define SCALER_DISPBASEX(x)			(SCALER_DISPBASE0 +        \
 						 (x) * (SCALER_DISPBASE1 - \
@@ -436,7 +420,11 @@
 						 (x) * (SCALER_DISPCTRL1 - \
 							SCALER_DISPCTRL0))
 #define SCALER_DISPBKGND2                       0x00000064
+
 #define SCALER_DISPSTAT2                        0x00000068
+# define SCALER_DISPSTAT2_FRCNT2_MASK		VC4_MASK(17, 12)
+# define SCALER_DISPSTAT2_FRCNT2_SHIFT		12
+
 #define SCALER_DISPBASE2                        0x0000006c
 #define SCALER_DISPALPHA2                       0x00000070
 #define SCALER_GAMADDR                          0x00000078

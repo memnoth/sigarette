@@ -189,7 +189,7 @@ static
 struct lock_class lock_classes[MAX_LOCKDEP_KEYS];
 static DECLARE_BITMAP(lock_classes_in_use, MAX_LOCKDEP_KEYS);
 
-static inline struct lock_class *hlock_class(struct held_lock *hlock)
+inline struct lock_class *lockdep_hlock_class(struct held_lock *hlock)
 {
 	unsigned int class_idx = hlock->class_idx;
 
@@ -210,6 +210,8 @@ static inline struct lock_class *hlock_class(struct held_lock *hlock)
 	 */
 	return lock_classes + class_idx;
 }
+EXPORT_SYMBOL_GPL(lockdep_hlock_class);
+#define hlock_class(hlock) lockdep_hlock_class(hlock)
 
 #ifdef CONFIG_LOCK_STAT
 static DEFINE_PER_CPU(struct lock_class_stats[MAX_LOCKDEP_KEYS], cpu_lock_stats);
@@ -3450,7 +3452,7 @@ struct lock_class *lock_chain_get_class(struct lock_chain *chain, int i)
 	u16 chain_hlock = chain_hlocks[chain->base + i];
 	unsigned int class_idx = chain_hlock_class_idx(chain_hlock);
 
-	return lock_classes + class_idx - 1;
+	return lock_classes + class_idx;
 }
 
 /*
@@ -3518,7 +3520,7 @@ static void print_chain_keys_chain(struct lock_chain *chain)
 		hlock_id = chain_hlocks[chain->base + i];
 		chain_key = print_chain_key_iteration(hlock_id, chain_key);
 
-		print_lock_name(lock_classes + chain_hlock_class_idx(hlock_id) - 1);
+		print_lock_name(lock_classes + chain_hlock_class_idx(hlock_id));
 		printk("\n");
 	}
 }

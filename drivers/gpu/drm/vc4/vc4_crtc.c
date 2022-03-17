@@ -70,6 +70,7 @@ static const struct debugfs_reg32 crtc_regs[] = {
 static unsigned int
 vc4_crtc_get_cob_allocation(struct vc4_dev *vc4, unsigned int channel)
 {
+	struct vc4_hvs *hvs = vc4->hvs;
 	u32 dispbase = HVS_READ(SCALER_DISPBASEX(channel));
 	/* Top/base are supposed to be 4-pixel aligned, but the
 	 * Raspberry Pi firmware fills the low bits (which are
@@ -89,6 +90,7 @@ static bool vc4_crtc_get_scanout_position(struct drm_crtc *crtc,
 {
 	struct drm_device *dev = crtc->dev;
 	struct vc4_dev *vc4 = to_vc4_dev(dev);
+	struct vc4_hvs *hvs = vc4->hvs;
 	struct vc4_crtc *vc4_crtc = to_vc4_crtc(crtc);
 	struct vc4_crtc_state *vc4_crtc_state = to_vc4_crtc_state(crtc->state);
 	unsigned int cob_size;
@@ -123,7 +125,7 @@ static bool vc4_crtc_get_scanout_position(struct drm_crtc *crtc,
 		*vpos /= 2;
 
 		/* Use hpos to correct for field offset in interlaced mode. */
-		if (VC4_GET_FIELD(val, SCALER_DISPSTATX_FRAME_COUNT) % 2)
+		if (vc4_hvs_get_fifo_frame_count(hvs, vc4_crtc_state->assigned_channel) % 2)
 			*hpos += mode->crtc_htotal / 2;
 	}
 
@@ -449,6 +451,7 @@ static void vc4_crtc_config_pv(struct drm_crtc *crtc, struct drm_encoder *encode
 static void require_hvs_enabled(struct drm_device *dev)
 {
 	struct vc4_dev *vc4 = to_vc4_dev(dev);
+	struct vc4_hvs *hvs = vc4->hvs;
 
 	WARN_ON_ONCE((HVS_READ(SCALER_DISPCTRL) & SCALER_DISPCTRL_ENABLE) !=
 		     SCALER_DISPCTRL_ENABLE);
@@ -462,6 +465,7 @@ static int vc4_crtc_disable(struct drm_crtc *crtc,
 	struct vc4_encoder *vc4_encoder = to_vc4_encoder(encoder);
 	struct vc4_crtc *vc4_crtc = to_vc4_crtc(crtc);
 	struct drm_device *dev = crtc->dev;
+	struct vc4_dev *vc4 = to_vc4_dev(dev);
 	int ret;
 
 	CRTC_WRITE(PV_V_CONTROL,
@@ -491,7 +495,7 @@ static int vc4_crtc_disable(struct drm_crtc *crtc,
 		vc4_encoder->post_crtc_disable(encoder, state);
 
 	vc4_crtc_pixelvalve_reset(crtc);
-	vc4_hvs_stop_channel(dev, channel);
+	vc4_hvs_stop_channel(vc4->hvs, channel);
 
 	if (vc4_encoder && vc4_encoder->post_crtc_powerdown)
 		vc4_encoder->post_crtc_powerdown(encoder, state);
@@ -517,6 +521,7 @@ static struct drm_encoder *vc4_crtc_get_encoder_by_type(struct drm_crtc *crtc,
 int vc4_crtc_disable_at_boot(struct drm_crtc *crtc)
 {
 	struct drm_device *drm = crtc->dev;
+	struct vc4_dev *vc4 = to_vc4_dev(drm);
 	struct vc4_crtc *vc4_crtc = to_vc4_crtc(crtc);
 	enum vc4_encoder_type encoder_type;
 	const struct vc4_pv_data *pv_data;
@@ -538,7 +543,7 @@ int vc4_crtc_disable_at_boot(struct drm_crtc *crtc)
 	if (!(CRTC_READ(PV_V_CONTROL) & PV_VCONTROL_VIDEN))
 		return 0;
 
-	channel = vc4_hvs_get_fifo_from_output(drm, vc4_crtc->data->hvs_output);
+	channel = vc4_hvs_get_fifo_from_output(vc4->hvs, vc4_crtc->data->hvs_output);
 	if (channel < 0)
 		return 0;
 
@@ -561,9 +566,11 @@ int vc4_crtc_disable_at_boot(struct drm_crtc *crtc)
 	if (ret)
 		return ret;
 
-	ret = pm_runtime_put(&vc4_hdmi->pdev->dev);
-	if (ret)
-		return ret;
+	/*
+	 * post_crtc_powerdown will have called pm_runtime_put, so we
+	 * don't need it here otherwise we'll get the reference counting
+	 * wrong.
+	 */
 
 	return 0;
 }
@@ -752,6 +759,7 @@ static void vc4_crtc_handle_page_flip(struct vc4_crtc *vc4_crtc)
 	struct drm_crtc *crtc = &vc4_crtc->base;
 	struct drm_device *dev = crtc->dev;
 	struct vc4_dev *vc4 = to_vc4_dev(dev);
+	struct vc4_hvs *hvs = vc4->hvs;
 	u32 chan = vc4_crtc->current_hvs_channel;
 	unsigned long flags;
 
@@ -770,7 +778,7 @@ static void vc4_crtc_handle_page_flip(struct vc4_crtc *vc4_crtc)
 		 * the CRTC and encoder already reconfigured, leading to
 		 * underruns. This can be seen when reconfiguring the CRTC.
 		 */
-		vc4_hvs_unmask_underrun(dev, chan);
+		vc4_hvs_unmask_underrun(hvs, chan);
 	}
 	spin_unlock(&vc4_crtc->irq_lock);
 	spin_unlock_irqrestore(&dev->event_lock, flags);
@@ -805,6 +813,7 @@ struct vc4_async_flip_state {
 	struct drm_pending_vblank_event *event;
 
 	struct vc4_seqno_cb cb;
+	struct dma_fence_cb fence_cb;
 };
 
 /* Called when the V3D execution for the BO being flipped to is done, so that
@@ -848,6 +857,39 @@ vc4_async_page_flip_complete(struct vc4_seqno_cb *cb)
 	}
 
 	kfree(flip_state);
+}
+
+static void vc4_async_page_flip_fence_complete(struct dma_fence *fence,
+					       struct dma_fence_cb *cb)
+{
+	struct vc4_async_flip_state *flip_state =
+		container_of(cb, struct vc4_async_flip_state, fence_cb);
+
+	vc4_async_page_flip_complete(&flip_state->cb);
+	dma_fence_put(fence);
+}
+
+static int vc4_async_set_fence_cb(struct drm_device *dev,
+				  struct vc4_async_flip_state *flip_state)
+{
+	struct drm_framebuffer *fb = flip_state->fb;
+	struct drm_gem_cma_object *cma_bo = drm_fb_cma_get_gem_obj(fb, 0);
+	struct vc4_dev *vc4 = to_vc4_dev(dev);
+	struct dma_fence *fence;
+
+	if (!vc4->hvs->hvs5) {
+		struct vc4_bo *bo = to_vc4_bo(&cma_bo->base);
+
+		return vc4_queue_seqno_cb(dev, &flip_state->cb, bo->seqno,
+					  vc4_async_page_flip_complete);
+	}
+
+	fence = dma_fence_get(dma_resv_excl_fence(cma_bo->base.resv));
+	if (dma_fence_add_callback(fence, &flip_state->fence_cb,
+				   vc4_async_page_flip_fence_complete))
+		vc4_async_page_flip_fence_complete(fence, &flip_state->fence_cb);
+
+	return 0;
 }
 
 /* Implements async (non-vblank-synced) page flips.
@@ -910,8 +952,7 @@ static int vc4_async_page_flip(struct drm_crtc *crtc,
 	 */
 	drm_atomic_set_fb_for_plane(plane->state, fb);
 
-	vc4_queue_seqno_cb(dev, &flip_state->cb, bo->seqno,
-			   vc4_async_page_flip_complete);
+	vc4_async_set_fence_cb(dev, flip_state);
 
 	/* Driver takes ownership of state on successful async commit. */
 	return 0;
@@ -951,14 +992,8 @@ void vc4_crtc_destroy_state(struct drm_crtc *crtc,
 	struct vc4_dev *vc4 = to_vc4_dev(crtc->dev);
 	struct vc4_crtc_state *vc4_state = to_vc4_crtc_state(state);
 
-	if (drm_mm_node_allocated(&vc4_state->mm)) {
-		unsigned long flags;
-
-		spin_lock_irqsave(&vc4->hvs->mm_lock, flags);
-		drm_mm_remove_node(&vc4_state->mm);
-		spin_unlock_irqrestore(&vc4->hvs->mm_lock, flags);
-
-	}
+	vc4_hvs_mark_dlist_entry_stale(vc4->hvs, vc4_state->mm);
+	vc4_state->mm = NULL;
 
 	drm_atomic_helper_crtc_destroy_state(crtc, state);
 }

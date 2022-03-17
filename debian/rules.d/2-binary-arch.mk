@@ -565,7 +565,7 @@ define dh_all
 	dh_installdebconf -p$(1)
 	$(lockme) dh_gencontrol -p$(1) -- -Vlinux:rprovides='$(rprovides)'
 	dh_md5sums -p$(1)
-	dh_builddeb -p$(1) -- -Zxz
+	dh_builddeb -p$(1)
 endef
 define newline
 
@@ -605,7 +605,7 @@ binary-%: checks-%
 	dh_testdir
 	dh_testroot
 
-	$(call dh_all,$(pkgimg))
+	$(call dh_all,$(pkgimg)) -- -Znone
 	$(call dh_all,$(pkgimg_mods))
 
 ifeq ($(do_extras_package),true)
@@ -634,7 +634,7 @@ ifneq ($(skipsub),true)
 endif
 
 ifneq ($(skipdbg),true)
-	$(call dh_all,$(dbgpkg))
+	$(call dh_all,$(dbgpkg)) -- -Zxz
 
 	# Hokay...here's where we do a little twiddling...
 	# Renaming the debug package prevents it from getting into

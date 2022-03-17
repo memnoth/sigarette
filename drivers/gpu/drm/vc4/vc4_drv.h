@@ -335,20 +335,15 @@ struct vc4_hvs {
 	struct drm_mm lbm_mm;
 	spinlock_t mm_lock;
 
+	struct list_head stale_dlist_entries;
+	struct work_struct free_dlist_work;
+
 	struct drm_mm_node mitchell_netravali_filter;
 
 	struct debugfs_regset32 regset;
 
 	/* HVS version 5 flag, therefore requires updated dlist structures */
 	bool hvs5;
-
-	spinlock_t hw_dlist_lock;
-	struct {
-		unsigned int start;
-		unsigned int size;
-		u32 shadow[2048];
-		bool pending;
-	} fifo[3];
 };
 
 struct vc4_plane {
@@ -388,11 +383,6 @@ struct vc4_plane_state {
 	 * hardware at vc4_crtc_atomic_flush() time.
 	 */
 	u32 __iomem *hw_dlist;
-
-	/* Offset where the plane's dlist was last stored in the
-	 * shadow dlist bucket at vc4_crtc_atomic_flush() time.
-	 */
-	unsigned int dlist_offset;
 
 	/* Clipped coordinates of the plane on the display. */
 	int crtc_x, crtc_y, crtc_w, crtc_h;
@@ -586,10 +576,16 @@ struct drm_connector *vc4_get_crtc_connector(struct drm_crtc *crtc,
 struct drm_encoder *vc4_get_crtc_encoder(struct drm_crtc *crtc,
 					 struct drm_crtc_state *state);
 
+struct vc4_hvs_dlist_allocation {
+	struct list_head node;
+	struct drm_mm_node mm_node;
+	unsigned int channel;
+	u8 target_frame_count;
+};
+
 struct vc4_crtc_state {
 	struct drm_crtc_state base;
-	/* Dlist area for this CRTC configuration. */
-	struct drm_mm_node mm;
+	struct vc4_hvs_dlist_allocation *mm;
 	bool txp_armed;
 	unsigned int assigned_channel;
 
@@ -616,8 +612,8 @@ to_vc4_crtc_state(struct drm_crtc_state *crtc_state)
 
 #define V3D_READ(offset) readl(vc4->v3d->regs + offset)
 #define V3D_WRITE(offset, val) writel(val, vc4->v3d->regs + offset)
-#define HVS_READ(offset) readl(vc4->hvs->regs + offset)
-#define HVS_WRITE(offset, val) writel(val, vc4->hvs->regs + offset)
+#define HVS_READ(offset) readl(hvs->regs + offset)
+#define HVS_WRITE(offset, val) writel(val, hvs->regs + offset)
 
 #define VC4_REG32(reg) { .name = #reg, .offset = reg }
 
@@ -978,16 +974,19 @@ void vc4_irq_reset(struct drm_device *dev);
 
 /* vc4_hvs.c */
 extern struct platform_driver vc4_hvs_driver;
-void vc4_hvs_stop_channel(struct drm_device *dev, unsigned int output);
-int vc4_hvs_get_fifo_from_output(struct drm_device *dev, unsigned int output);
+void vc4_hvs_stop_channel(struct vc4_hvs *hvs, unsigned int output);
+int vc4_hvs_get_fifo_from_output(struct vc4_hvs *hvs, unsigned int output);
+u8 vc4_hvs_get_fifo_frame_count(struct vc4_hvs *hvs, unsigned int fifo);
+void vc4_hvs_mark_dlist_entry_stale(struct vc4_hvs *hvs,
+				    struct vc4_hvs_dlist_allocation *alloc);
 int vc4_hvs_atomic_check(struct drm_crtc *crtc, struct drm_atomic_state *state);
 void vc4_hvs_atomic_begin(struct drm_crtc *crtc, struct drm_atomic_state *state);
 void vc4_hvs_atomic_enable(struct drm_crtc *crtc, struct drm_atomic_state *state);
 void vc4_hvs_atomic_disable(struct drm_crtc *crtc, struct drm_atomic_state *state);
 void vc4_hvs_atomic_flush(struct drm_crtc *crtc, struct drm_atomic_state *state);
-void vc4_hvs_dump_state(struct drm_device *dev);
-void vc4_hvs_unmask_underrun(struct drm_device *dev, int channel);
-void vc4_hvs_mask_underrun(struct drm_device *dev, int channel);
+void vc4_hvs_dump_state(struct vc4_hvs *hvs);
+void vc4_hvs_unmask_underrun(struct vc4_hvs *hvs, int channel);
+void vc4_hvs_mask_underrun(struct vc4_hvs *hvs, int channel);
 
 /* vc4_kms.c */
 int vc4_kms_load(struct drm_device *dev);
@@ -996,10 +995,7 @@ int vc4_kms_load(struct drm_device *dev);
 struct drm_plane *vc4_plane_init(struct drm_device *dev,
 				 enum drm_plane_type type);
 int vc4_plane_create_additional_planes(struct drm_device *dev);
-u32 vc4_plane_write_dlist(struct vc4_hvs *hvs,
-			  struct vc4_crtc_state *vc4_crtc_state,
-			  struct vc4_plane_state *vc4_plane_state,
-			  unsigned dlist_offset);
+u32 vc4_plane_write_dlist(struct drm_plane *plane, u32 __iomem *dlist);
 u32 vc4_plane_dlist_size(const struct drm_plane_state *state);
 void vc4_plane_async_set_fb(struct drm_plane *plane,
 			    struct drm_framebuffer *fb);
