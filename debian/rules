@@ -40,6 +40,8 @@ do_tools_host?=false
 do_tools_perf_jvmti?=false
 do_enforce_all?=false
 
+do_stamps?=true
+
 # Don't build tools in a cross compile environment.
 ifneq ($(DEB_HOST_ARCH),$(DEB_BUILD_ARCH))
 	do_tools=false

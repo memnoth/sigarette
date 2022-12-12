@@ -59,7 +59,9 @@ ifneq ($(skipdbg),true)
 	fi
 endif
 
+ifeq ($(do_stamps),true)
 	@touch $@
+endif
 
 define build_dkms_sign =
 	$(shell set -x; if grep -q CONFIG_MODULE_SIG=y $(1)/.config; then
@@ -518,7 +520,10 @@ ifneq ($(full_build),false)
 	# Clean out this flavours build directory.
 	rm -rf $(builddir)/build-$*
 endif
+
+ifeq ($(do_stamps),true)
 	@touch $@
+endif
 
 headers_tmp := $(CURDIR)/debian/tmp-headers
 headers_dir := $(CURDIR)/debian/linux-libc-dev
