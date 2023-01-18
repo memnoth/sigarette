@@ -24,3 +24,5 @@ do_extras_package	= true
 do_zfs			= true
 
 do_full_source = true
+do_stamps = false
+skipmodule = true
